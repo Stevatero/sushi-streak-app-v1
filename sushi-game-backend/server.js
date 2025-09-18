@@ -90,6 +90,23 @@ async function generateUniqueSessionCode() {
 // Dati in memoria per gestire le sessioni attive
 const activeSessions = {};
 
+// Endpoint di health check
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    message: 'Sushi Streak Server is running!',
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    service: 'sushi-streak-backend',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // API Routes
 app.post('/api/sessions', async (req, res) => {
   const { sessionName, playerName } = req.body;
