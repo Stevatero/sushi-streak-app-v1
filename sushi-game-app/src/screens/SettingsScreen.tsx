@@ -78,7 +78,7 @@ const SettingsScreen = () => {
     try {
       const shareUrl = shareService.generateShareLink(sessionId);
       await Share.share({
-        message: `🍣 Unisciti alla mia sessione Sushi Streak!\n\nNome sessione: ${sessionName}\nCodice: ${sessionId}\n\nLink diretto: ${shareUrl}`,
+        message: `🍣 Unisciti alla mia sessione Sushi Streak!\n\nNome sessione: ${sessionName}\n\nLink diretto: ${shareUrl}`,
         title: 'Invito Sushi Streak',
         url: shareUrl
       });
@@ -168,9 +168,7 @@ const SettingsScreen = () => {
                 <Text style={{ color: theme.colors.onSurface, fontSize: 14, opacity: 0.7 }}>
                   Sessione attiva: {sessionName}
                 </Text>
-                <Text style={{ color: theme.colors.onSurface, fontSize: 12, opacity: 0.5 }}>
-                  {sessionId}
-                </Text>
+              
               </View>
               <IconButton
                 icon="share-variant"

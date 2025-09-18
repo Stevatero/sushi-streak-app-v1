@@ -217,7 +217,7 @@ const GameSessionScreen = () => {
         </Text>
         {canShare && (
           <Text style={[styles.shareHint, { color: theme.colors.onSurfaceVariant }]}>
-            👆 Condividi sessione
+            👆 Condividi
           </Text>
         )}
       </TouchableOpacity>
