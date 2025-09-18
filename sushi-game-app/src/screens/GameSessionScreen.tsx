@@ -38,6 +38,7 @@ const GameSessionScreen = () => {
   
   // Stati per il salvataggio della sessione
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [restaurantName, setRestaurantName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   
@@ -110,70 +111,46 @@ const GameSessionScreen = () => {
         return;
       }
 
-      // Mostra opzioni di condivisione
-      Alert.alert(
-        '🍣 Condividi Sessione',
-        'Come vuoi condividere la sessione?',
-        [
-          {
-            text: '📱 Condividi Link',
-            onPress: async () => {
-              const success = await shareService.shareSession(
-                sessionId,
-                sessionName
-              );
-              
-              if (success) {
-                Alert.alert('✅ Successo', 'Sessione condivisa con successo!');
-              } else {
-                Alert.alert('❌ Errore', 'Impossibile condividere la sessione');
-              }
-            }
-          },
-          {
-            text: '📋 Copia Link',
-            onPress: async () => {
-              const success = await shareService.copyShareLink(sessionId);
-              
-              if (success) {
-                Alert.alert('✅ Copiato', 'Link copiato negli appunti!');
-              } else {
-                Alert.alert('❌ Errore', 'Impossibile copiare il link');
-              }
-            }
-          },
-          {
-            text: '🔢 Copia Codice',
-            onPress: async () => {
-              const success = await shareService.copySessionCode(sessionId);
-              
-              if (success) {
-                Alert.alert('✅ Copiato', 'Codice sessione copiato negli appunti!');
-              } else {
-                Alert.alert('❌ Errore', 'Impossibile copiare il codice');
-              }
-            }
-          },
-          {
-            text: '🌐 Apri nel Browser',
-            onPress: async () => {
-              const success = await shareService.openShareLink(sessionId);
-              
-              if (!success) {
-                Alert.alert('❌ Errore', 'Impossibile aprire il link nel browser');
-              }
-            }
-          },
-          {
-            text: 'Annulla',
-            style: 'cancel'
-          }
-        ]
-      );
+      // Mostra il modale di condivisione
+      setShowShareModal(true);
 
     } catch (error) {
       console.error('Errore nella condivisione:', error);
       Alert.alert('Errore', 'Si è verificato un errore durante la condivisione');
+    }
+  };
+
+  // Funzione per copiare il codice sessione
+  const copySessionCode = async () => {
+    try {
+      const success = await shareService.copySessionCode(sessionId);
+      
+      if (success) {
+        Alert.alert('✅ Copiato', 'Codice sessione copiato negli appunti!');
+      } else {
+        Alert.alert('❌ Errore', 'Impossibile copiare il codice');
+      }
+      setShowShareModal(false);
+    } catch (error) {
+      console.error('Errore nella copia del codice:', error);
+      Alert.alert('❌ Errore', 'Impossibile copiare il codice');
+    }
+  };
+
+  // Funzione per condividere il link
+  const shareSessionLink = async () => {
+    try {
+      const success = await shareService.shareSession(sessionId, sessionName);
+      
+      if (success) {
+        Alert.alert('✅ Successo', 'Sessione condivisa con successo!');
+      } else {
+        Alert.alert('❌ Errore', 'Impossibile condividere la sessione');
+      }
+      setShowShareModal(false);
+    } catch (error) {
+      console.error('Errore nella condivisione:', error);
+      Alert.alert('❌ Errore', 'Impossibile condividere la sessione');
     }
   };
 
@@ -240,7 +217,7 @@ const GameSessionScreen = () => {
         </Text>
         {canShare && (
           <Text style={[styles.shareHint, { color: theme.colors.onSurfaceVariant }]}>
-            👆 Tocca per condividere
+            👆 Condividi sessione
           </Text>
         )}
       </TouchableOpacity>
@@ -298,7 +275,7 @@ const GameSessionScreen = () => {
               styles.finishButtonBottomLeft,
               {
                 backgroundColor: isDarkMode 
-                  ? 'rgba(255, 255, 255, 0.3)' 
+                  ? 'rgba(255, 255, 255, 0.5)' 
                   : 'rgba(255, 255, 255, 0.8)'
               }
             ]}
@@ -396,105 +373,157 @@ const GameSessionScreen = () => {
         </View>
       </Modal>
 
-      {/* Modale per salvare la sessione */}
-      <Modal
-        visible={showSaveModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowSaveModal(false)}
-        statusBarTranslucent={true}
-      >
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView 
-            style={styles.keyboardAvoidingContainer}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-          >
-            <TouchableOpacity 
-              style={styles.modalTouchableOverlay}
-              activeOpacity={1}
-              onPress={() => {
-                setShowSaveModal(false);
-                setRestaurantName('');
-              }}
-            >
-              <TouchableOpacity 
-                style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}
-                activeOpacity={1}
-                onPress={(e) => e.stopPropagation()}
-              >
-                <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>
-                  💾 Salva Sessione
-                </Text>
-                
-                <Text style={[styles.saveModalDescription, { color: theme.colors.onSurface }]}>
-                  Salva questa partita per rivederla in futuro
-                </Text>
-                
-                <TextInput
-                  mode="outlined"
-                  label="Nome del ristorante"
-                  placeholder="Es. Sushi Zen, Sakura, ..."
-                  value={restaurantName}
-                  onChangeText={setRestaurantName}
-                  style={styles.restaurantInput}
-                  theme={{ colors: { primary: theme.colors.primary } }}
-                  autoFocus={true}
-                  returnKeyType="done"
-                  onSubmitEditing={() => {
-                    if (restaurantName.trim()) {
-                      saveSessionLocally();
-                    }
-                  }}
-                />
-                
-                <View style={styles.saveModalInfo}>
-                  <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
-                    Sessione: {sessionName}
-                  </Text>
-                  <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
-                    Data: {SessionStorageService.formatDate(new Date())}
-                  </Text>
-                  <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
-                    Vincitore: {sortedPlayers[0]?.name || 'Nessuno'} ({sortedPlayers[0]?.score || 0} pezzi)
-                  </Text>
-                </View>
-                
-                <View style={styles.modalButtons}>
-                  <Button 
-                    mode="outlined" 
-                    onPress={() => {
-                      setShowSaveModal(false);
-                      setRestaurantName('');
-                    }}
-                    style={styles.modalButton}
-                    disabled={isSaving}
-                  >
-                    Annulla
-                  </Button>
-                  <Button 
-                    mode="contained" 
-                    onPress={saveSessionLocally}
-                    style={styles.modalButton}
-                    loading={isSaving}
-                    disabled={isSaving}
-                  >
-                    Salva
-                  </Button>
-                </View>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
-      
-      {/* Settings Button posizionato in basso a destra */}
-      <View style={styles.settingsButtonContainer}>
-        <SettingsButton />
-      </View>
-    </View>
-  );
-};
+       {/* Modale per salvare la sessione */}
+       <Modal
+         visible={showSaveModal}
+         transparent={true}
+         animationType="slide"
+         onRequestClose={() => setShowSaveModal(false)}
+         statusBarTranslucent={true}
+       >
+         <View style={styles.modalOverlay}>
+           <KeyboardAvoidingView 
+             style={styles.keyboardAvoidingContainer}
+             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+             keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+           >
+             <TouchableOpacity 
+               style={styles.modalTouchableOverlay}
+               activeOpacity={1}
+               onPress={() => {
+                 setShowSaveModal(false);
+                 setRestaurantName('');
+               }}
+             >
+               <TouchableOpacity 
+                 style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}
+                 activeOpacity={1}
+                 onPress={(e) => e.stopPropagation()}
+               >
+                 <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>
+                   💾 Salva Sessione
+                 </Text>
+                 
+                 <Text style={[styles.saveModalDescription, { color: theme.colors.onSurface }]}>
+                   Salva questa partita per rivederla in futuro
+                 </Text>
+                 
+                 <TextInput
+                   mode="outlined"
+                   label="Nome del ristorante"
+                   placeholder="Es. Sushi Zen, Sakura, ..."
+                   value={restaurantName}
+                   onChangeText={setRestaurantName}
+                   style={styles.restaurantInput}
+                   theme={{ colors: { primary: theme.colors.primary } }}
+                   autoFocus={true}
+                   returnKeyType="done"
+                   onSubmitEditing={() => {
+                     if (restaurantName.trim()) {
+                       saveSessionLocally();
+                     }
+                   }}
+                 />
+                 
+                 <View style={styles.saveModalInfo}>
+                   <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
+                     Sessione: {sessionName}
+                   </Text>
+                   <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
+                     Data: {SessionStorageService.formatDate(new Date())}
+                   </Text>
+                   <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
+                     Vincitore: {sortedPlayers[0]?.name || 'Nessuno'} ({sortedPlayers[0]?.score || 0} pezzi)
+                   </Text>
+                 </View>
+                 
+                 <View style={styles.modalButtons}>
+                   <Button 
+                     mode="outlined" 
+                     onPress={() => {
+                       setShowSaveModal(false);
+                       setRestaurantName('');
+                     }}
+                     style={styles.modalButton}
+                     disabled={isSaving}
+                   >
+                     Annulla
+                   </Button>
+                   <Button 
+                     mode="contained" 
+                     onPress={saveSessionLocally}
+                     style={styles.modalButton}
+                     loading={isSaving}
+                     disabled={isSaving}
+                   >
+                     Salva
+                   </Button>
+                 </View>
+               </TouchableOpacity>
+             </TouchableOpacity>
+           </KeyboardAvoidingView>
+         </View>
+       </Modal>
+
+             {/* Modale di condivisione */}
+       <Modal
+         visible={showShareModal}
+         transparent={true}
+         animationType="slide"
+         onRequestClose={() => setShowShareModal(false)}
+         statusBarTranslucent={true}
+       >
+         <View style={styles.modalOverlay}>
+           <TouchableOpacity 
+             style={styles.modalTouchableOverlay}
+             activeOpacity={1}
+             onPress={() => setShowShareModal(false)}
+           >
+             <TouchableOpacity 
+               style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}
+               activeOpacity={1}
+               onPress={(e) => e.stopPropagation()}
+             >
+               <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>
+                 🍣 Condividi Sessione
+               </Text>
+               
+               <Text style={[styles.saveModalDescription, { color: theme.colors.onSurface }]}>
+                 Condividi la sessione "{sessionName}" con i tuoi amici
+               </Text>
+               
+               <View style={styles.shareModalButtons}>
+                 <Button 
+                   mode="contained" 
+                   onPress={copySessionCode}
+                   style={styles.shareModalButton}
+                   icon="content-copy"
+                 >
+                    Copia Codice
+                 </Button>
+                 
+                 <Button 
+                   mode="contained" 
+                   onPress={shareSessionLink}
+                   style={styles.shareModalButton}
+                   icon="share-variant"
+                 >
+                    Condividi Link
+                 </Button>
+               </View>
+             </TouchableOpacity>
+           </TouchableOpacity>
+         </View>
+       </Modal>
+
+       
+       {/* Settings Button positioned at bottom right */}
+       <View style={styles.settingsButtonContainer}>
+         <SettingsButton />
+       </View>
+     </View>
+   );
+ };
 
 const styles = StyleSheet.create({
   container: {
@@ -737,6 +766,22 @@ const styles = StyleSheet.create({
     right: 20,
     zIndex: 10,
   },
-});
-
-export default GameSessionScreen;
+  // Stili per il modale di condivisione
+  shareModalButtons: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 15,
+    marginTop: 20,
+  },
+  shareModalButton: {
+    width: '100%',
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 30,
+    minHeight: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  });
+  
+  export default GameSessionScreen;

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Modal, Share, Alert, BackHandler } from 'react-native';
-import { Text, Switch, Button, Divider, useTheme, IconButton } from 'react-native-paper';
+import { View, Text, StyleSheet, Switch, Alert, BackHandler, Modal, TouchableOpacity, ScrollView, Share } from 'react-native';
+import { useTheme, Button, IconButton, Divider } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useColorScheme } from '../theme/ThemeProvider';
 import SoundManager from '../utils/SoundManager';
 import useGameStore from '../store/gameStore';
+import shareService from '../services/shareService';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
@@ -12,6 +13,7 @@ const SettingsScreen = () => {
   const { isDarkMode, toggleTheme } = useColorScheme();
   const [soundEnabled, setSoundEnabled] = useState(SoundManager.isSoundEnabled());
   const [creditsVisible, setCreditsVisible] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   
   // Ottieni i dati della sessione dal game store
@@ -57,6 +59,36 @@ const SettingsScreen = () => {
     }, [navigation, creditsVisible])
   );
 
+  const copySessionCode = async () => {
+    if (!sessionId) return;
+    
+    try {
+      await shareService.copySessionCode(sessionId);
+      Alert.alert('Successo', 'Codice sessione copiato negli appunti!');
+    } catch (error) {
+      console.error('Errore durante la copia:', error);
+      Alert.alert('Errore', 'Impossibile copiare il codice');
+    }
+    setShowShareModal(false);
+  };
+
+  const shareSessionLink = async () => {
+    if (!sessionId || !sessionName) return;
+    
+    try {
+      const shareUrl = shareService.generateShareLink(sessionId);
+      await Share.share({
+        message: `🍣 Unisciti alla mia sessione Sushi Streak!\n\nNome sessione: ${sessionName}\nCodice: ${sessionId}\n\nLink diretto: ${shareUrl}`,
+        title: 'Invito Sushi Streak',
+        url: shareUrl
+      });
+    } catch (error) {
+      console.error('Errore durante la condivisione:', error);
+      Alert.alert('Errore', 'Impossibile condividere il link');
+    }
+    setShowShareModal(false);
+  };
+
   const shareSession = async () => {
     if (!sessionId || !sessionName) {
       Alert.alert('Errore', 'Nessuna sessione attiva da condividere');
@@ -73,15 +105,7 @@ const SettingsScreen = () => {
       return;
     }
 
-    try {
-      await Share.share({
-        message: `🍣 Unisciti alla mia sessione Sushi Streak!\n\nNome sessione: ${sessionName}\nCodice: ${sessionId}\n\nScarica l'app e inserisci questo codice per giocare insieme!`,
-        title: 'Invito Sushi Streak'
-      });
-    } catch (error) {
-      console.error('Errore durante la condivisione:', error);
-      Alert.alert('Errore', 'Impossibile condividere la sessione');
-    }
+    setShowShareModal(true);
   };
 
   const toggleSound = () => {
@@ -104,7 +128,6 @@ const SettingsScreen = () => {
             <Switch
               value={isDarkMode}
               onValueChange={toggleTheme}
-              color={theme.colors.primary}
               style={styles.switch}
               ios_backgroundColor={theme.colors.surface}
               trackColor={{ false: '#767577', true: theme.colors.primaryContainer }}
@@ -125,7 +148,6 @@ const SettingsScreen = () => {
             <Switch
               value={soundEnabled}
               onValueChange={toggleSound}
-              color={theme.colors.primary}
               style={styles.switch}
               ios_backgroundColor={theme.colors.surface}
               trackColor={{ false: '#767577', true: theme.colors.primaryContainer }}
@@ -147,7 +169,7 @@ const SettingsScreen = () => {
                   Sessione attiva: {sessionName}
                 </Text>
                 <Text style={{ color: theme.colors.onSurface, fontSize: 12, opacity: 0.5 }}>
-                  Codice: {sessionId}
+                  {sessionId}
                 </Text>
               </View>
               <IconButton
@@ -234,6 +256,51 @@ const SettingsScreen = () => {
       >
         Salva
       </Button>
+
+      {/* Modale di condivisione personalizzato */}
+      <Modal
+        visible={showShareModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowShareModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.shareModalContent, { backgroundColor: theme.colors.surface }]}>
+            <Text style={[styles.shareModalTitle, { color: theme.colors.primary }]}>
+              Condividi Sessione
+            </Text>
+            
+            <View style={styles.shareModalButtons}>
+              <TouchableOpacity
+                style={[styles.shareModalButton, { backgroundColor: theme.colors.primary }]}
+                onPress={copySessionCode}
+              >
+                <Text style={[styles.shareModalButtonText, { color: theme.colors.onPrimary }]}>
+                  Copia Codice
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.shareModalButton, { backgroundColor: theme.colors.primary }]}
+                onPress={shareSessionLink}
+              >
+                <Text style={[styles.shareModalButtonText, { color: theme.colors.onPrimary }]}>
+                  Condividi Link
+                </Text>
+              </TouchableOpacity>
+            </View>
+            
+            <TouchableOpacity
+              style={[styles.shareModalCancelButton, { borderColor: theme.colors.outline }]}
+              onPress={() => setShowShareModal(false)}
+            >
+              <Text style={[styles.shareModalCancelText, { color: theme.colors.onSurfaceVariant }]}>
+                Annulla
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -344,6 +411,52 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 5,
     fontStyle: 'italic',
+  },
+  shareModalContent: {
+    width: '90%',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+  },
+  shareModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  shareModalButtons: {
+    width: '100%',
+    gap: 16,
+    marginBottom: 20,
+  },
+  shareModalButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 200,
+  },
+  shareModalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  shareModalCancelButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareModalCancelText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
 
