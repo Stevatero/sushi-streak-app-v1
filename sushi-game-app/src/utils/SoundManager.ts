@@ -61,14 +61,17 @@ class SoundManager {
     if (!this.soundEnabled || !this.soundsLoaded) return;
     
     try {
-      const player = this.players['piece'];
-      if (player) {
+      // Crea un nuovo player per ogni riproduzione per permettere sovrapposizioni
+      const newPlayer = createAudioPlayer(require('../../assets/sounds/piece.mp3'));
+      if (newPlayer) {
         try {
-          // Con expo-audio, resettiamo la posizione e riproduciamo
-          player.seekTo(0);
-          player.play();
+          newPlayer.play();
+          
+          // Rilascia automaticamente il player dopo la riproduzione
+          setTimeout(() => {
+            newPlayer.release?.();
+          }, 2000); // Rilascia dopo 2 secondi (durata stimata del suono)
         } catch (error) {
-          // Gestione silenziosa dell'errore per non interrompere l'esperienza utente
           console.warn('Impossibile riprodurre il suono piece:', error);
         }
       }

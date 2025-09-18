@@ -351,3 +351,417 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server in ascolto sulla porta ${PORT}`);
 });
+
+// Endpoint per ottenere informazioni di una sessione per la condivisione
+app.get('/api/sessions/:sessionId/info', (req, res) => {
+  const { sessionId } = req.params;
+  
+  // Controlla prima nelle sessioni attive
+  if (activeSessions[sessionId]) {
+    const session = activeSessions[sessionId];
+    return res.json({
+      sessionId,
+      sessionName: session.name,
+      playersCount: session.players.length,
+      isActive: true,
+      players: session.players.map(p => ({
+        name: p.name,
+        score: p.score,
+        finished: p.finished
+      }))
+    });
+  }
+  
+  // Se non è attiva, controlla nel database
+  db.get('SELECT * FROM sessions WHERE id = ?', [sessionId], (err, session) => {
+    if (err) {
+      return res.status(500).json({ error: 'Errore del database' });
+    }
+    
+    if (!session) {
+      return res.status(404).json({ error: 'Sessione non trovata' });
+    }
+    
+    // Ottieni i giocatori della sessione
+    db.all('SELECT * FROM players WHERE session_id = ?', [sessionId], (err, players) => {
+      if (err) {
+        return res.status(500).json({ error: 'Errore del database' });
+      }
+      
+      res.json({
+        sessionId,
+        sessionName: session.name,
+        playersCount: players.length,
+        isActive: false,
+        players: players.map(p => ({
+          name: p.name,
+          score: p.score,
+          finished: p.finished
+        }))
+      });
+    });
+  });
+});
+
+// Pagina web per unirsi a una sessione
+app.get('/join/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  
+  // Ottieni informazioni sulla sessione
+  const getSessionInfo = () => {
+    return new Promise((resolve, reject) => {
+      if (activeSessions[sessionId]) {
+        const session = activeSessions[sessionId];
+        resolve({
+          sessionId,
+          sessionName: session.name,
+          playersCount: session.players.length,
+          isActive: true,
+          players: session.players
+        });
+      } else {
+        db.get('SELECT * FROM sessions WHERE id = ?', [sessionId], (err, session) => {
+          if (err) return reject(err);
+          if (!session) return reject(new Error('Sessione non trovata'));
+          
+          db.all('SELECT * FROM players WHERE session_id = ?', [sessionId], (err, players) => {
+            if (err) return reject(err);
+            resolve({
+              sessionId,
+              sessionName: session.name,
+              playersCount: players.length,
+              isActive: false,
+              players
+            });
+          });
+        });
+      }
+    });
+  };
+  
+  getSessionInfo()
+    .then(sessionInfo => {
+      const html = `
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍣 Sushi Streak - Unisciti alla Sessione</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .sushi-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2rem;
+        }
+        
+        .session-info {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin: 25px 0;
+        }
+        
+        .session-name {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        
+        .session-details {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+        }
+        
+        .detail-item {
+            text-align: center;
+        }
+        
+        .detail-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .detail-label {
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        
+        .status.active {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status.inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .players-list {
+            margin: 20px 0;
+            text-align: left;
+        }
+        
+        .player-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 10px;
+            border: 1px solid #eee;
+        }
+        
+        .buttons {
+            margin-top: 30px;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 15px 30px;
+            margin: 10px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1rem;
+            font-weight: bold;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .app-store-links {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+        
+        .app-store-links p {
+            color: #666;
+            margin-bottom: 15px;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 30px 20px;
+            }
+            
+            .session-details {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .btn {
+                display: block;
+                margin: 10px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sushi-icon">🍣</div>
+        <h1>Sushi Streak</h1>
+        <p>Sei stato invitato a una sessione di gioco!</p>
+        
+        <div class="session-info">
+            <div class="session-name">${sessionInfo.sessionName}</div>
+            <div class="status ${sessionInfo.isActive ? 'active' : 'inactive'}">
+                ${sessionInfo.isActive ? '🟢 Sessione Attiva' : '🔴 Sessione Terminata'}
+            </div>
+            
+            <div class="session-details">
+                <div class="detail-item">
+                    <div class="detail-value">${sessionInfo.playersCount}</div>
+                    <div class="detail-label">Giocatori</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-value">${sessionId}</div>
+                    <div class="detail-label">Codice Sessione</div>
+                </div>
+            </div>
+            
+            ${sessionInfo.players.length > 0 ? `
+            <div class="players-list">
+                <h3>Giocatori:</h3>
+                ${sessionInfo.players.map(player => `
+                    <div class="player-item">
+                        <span>${player.name}</span>
+                        <span>${player.score} 🍣 ${player.finished ? '✅' : ''}</span>
+                    </div>
+                `).join('')}
+            </div>
+            ` : ''}
+        </div>
+        
+        <div class="buttons">
+            ${sessionInfo.isActive ? `
+                <a href="sushi-streak://join/${sessionId}" class="btn btn-primary">
+                    📱 Apri nell'App
+                </a>
+            ` : ''}
+            <button onclick="copySessionCode()" class="btn btn-secondary">
+                📋 Copia Codice
+            </button>
+        </div>
+        
+        <div class="app-store-links">
+            <p>Non hai ancora l'app? Scaricala qui:</p>
+            <a href="#" class="btn btn-primary">📱 App Store</a>
+            <a href="#" class="btn btn-primary">🤖 Google Play</a>
+        </div>
+    </div>
+    
+    <script>
+        function copySessionCode() {
+            navigator.clipboard.writeText('${sessionId}').then(() => {
+                alert('✅ Codice sessione copiato negli appunti!');
+            }).catch(() => {
+                // Fallback per browser più vecchi
+                const textArea = document.createElement('textarea');
+                textArea.value = '${sessionId}';
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                alert('✅ Codice sessione copiato negli appunti!');
+            });
+        }
+        
+        // Prova ad aprire l'app automaticamente su mobile
+        if (/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+            setTimeout(() => {
+                window.location.href = 'sushi-streak://join/${sessionId}';
+            }, 1000);
+        }
+    </script>
+</body>
+</html>`;
+      
+      res.send(html);
+    })
+    .catch(error => {
+      res.status(404).send(`
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍣 Sushi Streak - Sessione Non Trovata</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            margin: 0;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .error-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        p {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 25px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="error-icon">❌</div>
+        <h1>Sessione Non Trovata</h1>
+        <p>La sessione richiesta non esiste o è scaduta.</p>
+        <a href="#" class="btn">📱 Scarica l'App</a>
+    </div>
+</body>
+</html>`);
+    });
+});

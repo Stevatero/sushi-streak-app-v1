@@ -78,7 +78,10 @@ const SushiStack: React.FC<SushiStackProps> = ({ pieceCount }) => {
 
     Matter.World.add(engine.world, [ground, leftWall, rightWall]);
 
-    const runner = Matter.Runner.create({ delta: 1000 / 60 });
+    const runner = Matter.Runner.create({ 
+      delta: 1000 / 60,
+      isFixed: true // Use fixed timestep for more stable physics simulation
+    });
     Matter.Runner.run(runner, engine);
 
     return () => {

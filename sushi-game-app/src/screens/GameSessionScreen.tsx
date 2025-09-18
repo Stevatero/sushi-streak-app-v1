@@ -10,6 +10,7 @@ import SettingsButton from '../components/SettingsButton';
 import SoundManager from '../utils/SoundManager';
 import { useColorScheme } from '../theme/ThemeProvider';
 import { SessionStorageService, SavedSession } from '../services/sessionStorage';
+import shareService from '../services/shareService';
 
 const GameSessionScreen = () => {
   const route = useRoute();
@@ -92,29 +93,87 @@ const GameSessionScreen = () => {
 
   // Funzione per condividere la sessione
   const shareSession = async () => {
-    if (!sessionId || !sessionName) {
-      Alert.alert('Errore', 'Nessuna sessione attiva da condividere');
-      return;
-    }
-
-    if (gameEnded) {
-      Alert.alert('Sessione terminata', 'Non puoi condividere una sessione già terminata');
-      return;
-    }
-
-    if (isSessionExpired) {
-      Alert.alert('Sessione scaduta', 'Non è più possibile condividere questa sessione. Sono passati più di 10 minuti.');
-      return;
-    }
-
     try {
-      await Share.share({
-        message: `🍣 Unisciti alla mia sessione Sushi Streak!\n\nNome sessione: ${sessionName}\nCodice: ${sessionId}\n\nScarica l'app e inserisci questo codice per giocare insieme!`,
-        title: 'Invito Sushi Streak'
-      });
+      if (!sessionId || !sessionName) {
+        Alert.alert('Errore', 'Dati della sessione non disponibili');
+        return;
+      }
+
+      // Verifica se la sessione può essere condivisa
+      const canShare = await shareService.canShareSession(sessionId);
+      
+      if (!canShare) {
+        Alert.alert(
+          'Sessione non disponibile',
+          'La sessione non è più disponibile per la condivisione.'
+        );
+        return;
+      }
+
+      // Mostra opzioni di condivisione
+      Alert.alert(
+        '🍣 Condividi Sessione',
+        'Come vuoi condividere la sessione?',
+        [
+          {
+            text: '📱 Condividi Link',
+            onPress: async () => {
+              const success = await shareService.shareSession(
+                sessionId,
+                sessionName
+              );
+              
+              if (success) {
+                Alert.alert('✅ Successo', 'Sessione condivisa con successo!');
+              } else {
+                Alert.alert('❌ Errore', 'Impossibile condividere la sessione');
+              }
+            }
+          },
+          {
+            text: '📋 Copia Link',
+            onPress: async () => {
+              const success = await shareService.copyShareLink(sessionId);
+              
+              if (success) {
+                Alert.alert('✅ Copiato', 'Link copiato negli appunti!');
+              } else {
+                Alert.alert('❌ Errore', 'Impossibile copiare il link');
+              }
+            }
+          },
+          {
+            text: '🔢 Copia Codice',
+            onPress: async () => {
+              const success = await shareService.copySessionCode(sessionId);
+              
+              if (success) {
+                Alert.alert('✅ Copiato', 'Codice sessione copiato negli appunti!');
+              } else {
+                Alert.alert('❌ Errore', 'Impossibile copiare il codice');
+              }
+            }
+          },
+          {
+            text: '🌐 Apri nel Browser',
+            onPress: async () => {
+              const success = await shareService.openShareLink(sessionId);
+              
+              if (!success) {
+                Alert.alert('❌ Errore', 'Impossibile aprire il link nel browser');
+              }
+            }
+          },
+          {
+            text: 'Annulla',
+            style: 'cancel'
+          }
+        ]
+      );
+
     } catch (error) {
-      console.error('Errore durante la condivisione:', error);
-      Alert.alert('Errore', 'Impossibile condividere la sessione');
+      console.error('Errore nella condivisione:', error);
+      Alert.alert('Errore', 'Si è verificato un errore durante la condivisione');
     }
   };
 
@@ -264,7 +323,7 @@ const GameSessionScreen = () => {
             }}
             style={styles.newGameButton}
           >
-            Nuova Partita
+            🎮 Nuova Partita
           </Button>
         </View>
       )}
@@ -330,7 +389,7 @@ const GameSessionScreen = () => {
                 }}
                 style={styles.modalButton}
               >
-                Nuova Partita
+                🎮 Nuova Partita
               </Button>
             </View>
           </View>

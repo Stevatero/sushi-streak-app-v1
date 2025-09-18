@@ -11,13 +11,33 @@
     "newArchEnabled": true,
     "primaryColor": "#FF6B6B",
     "backgroundColor": "#FFFFFF",
+    "scheme": "sushi-streak",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.stevatero.sushistreakapp",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSExceptionDomains": {
+            "sushi-streak-production.up.railway.app": {
+              "NSExceptionAllowsInsecureHTTPLoads": false,
+              "NSExceptionMinimumTLSVersion": "1.0",
+              "NSExceptionRequiresForwardSecrecy": false
+            }
+          }
+        },
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "sushi-streak",
+            "CFBundleURLSchemes": ["sushi-streak"]
+          }
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -28,7 +48,27 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ],
+      "package": "com.stevatero.sushistreakapp",
+      "usesCleartextTraffic": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "sushi-streak-production.up.railway.app"
+            },
+            {
+              "scheme": "sushi-streak"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
     "web": {
