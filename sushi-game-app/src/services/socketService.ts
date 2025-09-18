@@ -1,7 +1,8 @@
 import { io, Socket } from 'socket.io-client';
+import { Platform } from 'react-native';
 
-// Indirizzo del server backend
-const SOCKET_URL = 'http://192.168.26.103:3000';
+// Indirizzo del server backend - usa l'IP della macchina per Android
+const SOCKET_URL = Platform.OS === 'android' ? 'http://192.168.178.67:3000' : 'http://localhost:3000';
 
 class SocketService {
   private socket: Socket | null = null;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Linking, Image } from 'react-native';
+import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Linking, Image, Platform, KeyboardAvoidingView, Alert } from 'react-native';
 import { useTheme, Button, IconButton } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -7,6 +7,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import SettingsButton from '../components/SettingsButton';
 import useGameStore from '../store/gameStore';
 import { useFonts, JotiOne_400Regular } from '@expo-google-fonts/joti-one';
+
+// URL del server - usa l'IP della macchina per Android
+const SERVER_URL = Platform.OS === 'android' ? 'http://192.168.178.67:3000' : 'http://localhost:3000';
 type RootStackParamList = {
   Home: undefined;
   GameSession: {
@@ -23,7 +26,7 @@ type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'H
 const HomeScreen = () => {
   const [sessionName, setSessionName] = useState('');
   const [playerName, setPlayerName] = useState('');
-  const [joinCode, setJoinCode] = useState('');
+  const [sessionToJoin, setSessionToJoin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [expandedSection, setExpandedSection] = useState<'create' | 'join' | null>(null);
@@ -62,7 +65,7 @@ const HomeScreen = () => {
   const handleDeepLink = (url: string) => {
     const sessionCode = url.split('session=')[1];
     if (sessionCode) {
-      setJoinCode(sessionCode);
+      setSessionToJoin(sessionCode);
       setExpandedSection('join');
     }
   };
@@ -113,7 +116,7 @@ const HomeScreen = () => {
     setError('');
 
     try {
-      const response = await fetch('http://192.168.26.103:3000/api/sessions', {
+      const response = await fetch(`${SERVER_URL}/api/sessions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -146,7 +149,7 @@ const HomeScreen = () => {
   };
 
   const joinSession = async () => {
-    if (!joinCode || !playerName) return;
+    if (!sessionToJoin || !playerName) return;
 
     // Salva il nome del giocatore
     await savePlayerName(playerName);
@@ -155,17 +158,23 @@ const HomeScreen = () => {
     setError('');
 
     try {
-      const response = await fetch('http://192.168.26.103:3000/api/sessions/join', {
+      // Crea un controller per il timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 secondi
+
+      const response = await fetch(`${SERVER_URL}/api/sessions/join`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          sessionId: joinCode,
-          playerName,
+          sessionId: sessionToJoin.toUpperCase().trim(),
+          playerName: playerName.trim(),
         }),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
       const data = await response.json();
 
       if (!response.ok) {
@@ -173,18 +182,24 @@ const HomeScreen = () => {
       }
 
       navigation.navigate('GameSession', {
-        sessionId: joinCode,
+        sessionId: sessionToJoin.toUpperCase().trim(),
         sessionName: data.sessionName,
-        playerName,
+        playerName: playerName.trim(),
         isHost: false,
         playerId: data.playerId
       });
     } catch (err) {
-      // Gestione specifica per errori di rete
-      if (err instanceof Error && err.message.includes('Network request failed')) {
-        setError('Sessione non trovata, devi crearne una nuova');
+      // Gestione specifica per errori di rete e timeout
+      if (err instanceof Error) {
+        if (err.name === 'AbortError') {
+          setError('Connessione scaduta dopo 20 secondi. Verifica che il server sia raggiungibile e riprova.');
+        } else if (err.message.includes('Network request failed') || err.message.includes('fetch')) {
+          setError('Impossibile connettersi al server. Verifica la connessione di rete e riprova.');
+        } else {
+          setError(err.message);
+        }
       } else {
-        setError(err instanceof Error ? err.message : 'Errore durante l\'accesso alla sessione');
+        setError('Errore durante l\'accesso alla sessione');
       }
       console.error(err);
     } finally {
@@ -199,136 +214,173 @@ const HomeScreen = () => {
 
   return (
     <View style={[styles.mainContainer, { backgroundColor: theme.colors.background }]}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.header}>
-          <Image 
-            source={require('../../assets/icon.png')} 
-            style={styles.appIcon}
-            resizeMode="contain"
-          />
-          <Text style={[styles.title, { color: theme.colors.primary }]}>Sushi Streak</Text>
-        </View>
-        
-        {error ? (
-          <View style={[styles.errorContainer, { backgroundColor: theme.colors.errorContainer }]}>
-            <Text style={[styles.errorText, { color: theme.colors.error }]}>{error}</Text>
-          </View>
-        ) : null}
-
-        {/* Sezione Crea una nuova sessione */}
-        <TouchableOpacity 
-          style={[styles.sectionHeader, { backgroundColor: theme.colors.surface }]}
-          onPress={() => setExpandedSection(expandedSection === 'create' ? null : 'create')}
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+      >
+        <ScrollView 
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>
-            🎮  Crea una nuova sessione
-          </Text>
-          <Text style={[styles.expandIcon, { color: theme.colors.primary }]}>
-            {expandedSection === 'create' ? '▼' : '▶'}
-          </Text>
-        </TouchableOpacity>
-
-        {expandedSection === 'create' && (
-          <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-            <TextInput
-              style={[styles.input, { 
-                backgroundColor: theme.colors.surface, 
-                color: theme.colors.onSurface,
-                borderWidth: 1,
-                borderColor: theme.colors.outline
-              }]}
-              placeholder="Nome della sessione"
-              placeholderTextColor={theme.colors.onSurfaceDisabled}
-              value={sessionName}
-              onChangeText={setSessionName}
-              editable={true}
+          <View style={styles.header}>
+            <Image 
+              source={require('../../assets/icon.png')} 
+              style={styles.appIcon}
+              resizeMode="contain"
             />
-            <TouchableOpacity 
-              onPress={() => setSessionName(generateSessionName())}
-              style={{ alignSelf: 'flex-end', marginBottom: 10 }}
-            >
-              <Text style={{ color: theme.colors.primary, fontSize: 12 }}>
-                🎲 Genera nome casuale
-              </Text>
-            </TouchableOpacity>
-            <TextInput
-              style={[styles.input, { 
-                backgroundColor: theme.colors.surface, 
-                color: theme.colors.onSurface,
-                borderWidth: 1,
-                borderColor: theme.colors.outline
-              }]}
-              placeholder="Il tuo nome"
-              placeholderTextColor={theme.colors.onSurfaceDisabled}
-              value={playerName}
-              onChangeText={setPlayerName}
-            />
-            <Button
-              mode="contained"
-              onPress={createSession}
-              style={styles.button}
-              disabled={!sessionName || !playerName || loading}
-              loading={loading}
-            >
-              Crea Sessione
-            </Button>
+            <Text style={[styles.title, { color: theme.colors.primary }]}>Sushi Streak</Text>
           </View>
-        )}
+          
+          {error ? (
+            <View style={[styles.errorContainer, { backgroundColor: theme.colors.errorContainer }]}>
+              <Text style={[styles.errorText, { color: theme.colors.error }]}>{error}</Text>
+              {(error.includes('Connessione scaduta') || error.includes('Impossibile connettersi')) && (
+                <Button
+                  mode="outlined"
+                  onPress={() => {
+                    setError('');
+                    if (expandedSection === 'join' && sessionToJoin && playerName) {
+                      joinSession();
+                    }
+                  }}
+                  style={[styles.button, { marginTop: 10 }]}
+                  disabled={loading}
+                >
+                  🔄 Riprova
+                </Button>
+              )}
+            </View>
+          ) : null}
 
-        {/* Sezione Unisciti a una sessione */}
-        <TouchableOpacity 
-          style={[styles.sectionHeader, { backgroundColor: theme.colors.surface }]}
-          onPress={() => setExpandedSection(expandedSection === 'join' ? null : 'join')}
-        >
-          <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>
-            🔗  Unisciti a una sessione
-          </Text>
-          <Text style={[styles.expandIcon, { color: theme.colors.primary }]}>
-            {expandedSection === 'join' ? '▼' : '▶'}
-          </Text>
-        </TouchableOpacity>
+          {/* Sezione Crea una nuova sessione */}
+          <TouchableOpacity 
+            style={[styles.sectionHeader, { backgroundColor: theme.colors.surface }]}
+            onPress={() => setExpandedSection(expandedSection === 'create' ? null : 'create')}
+          >
+            <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>
+              🎮  Crea una nuova sessione
+            </Text>
+            <Text style={[styles.expandIcon, { color: theme.colors.primary }]}>
+              {expandedSection === 'create' ? '▼' : '▶'}
+            </Text>
+          </TouchableOpacity>
 
-        {expandedSection === 'join' && (
-          <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-            <TextInput
-              style={[styles.input, { 
-                backgroundColor: theme.colors.surface, 
-                color: theme.colors.onSurface,
-                borderWidth: 1,
-                borderColor: theme.colors.outline
-              }]}
-              placeholder="Codice sessione"
-              placeholderTextColor={theme.colors.onSurfaceDisabled}
-              value={joinCode}
-              onChangeText={setJoinCode}
-            />
-            <TextInput
-              style={[styles.input, { 
-                backgroundColor: theme.colors.surface, 
-                color: theme.colors.onSurface,
-                borderWidth: 1,
-                borderColor: theme.colors.outline
-              }]}
-              placeholder="Il tuo nome"
-              placeholderTextColor={theme.colors.onSurfaceDisabled}
-              value={playerName}
-              onChangeText={setPlayerName}
-            />
-            <Button
-              mode="contained"
-              onPress={joinSession}
-              style={styles.button}
-              disabled={!joinCode || !playerName || loading}
-              loading={loading}
-            >
-              Unisciti
-            </Button>
-          </View>
-        )}
-      </ScrollView>
+          {expandedSection === 'create' && (
+            <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+              <TextInput
+                style={[styles.input, { 
+                  backgroundColor: theme.colors.surface, 
+                  color: theme.colors.onSurface,
+                  borderWidth: 1,
+                  borderColor: theme.colors.outline
+                }]}
+                placeholder="Nome della sessione"
+                placeholderTextColor={theme.colors.onSurfaceDisabled}
+                value={sessionName}
+                onChangeText={setSessionName}
+                editable={true}
+              />
+              <TouchableOpacity 
+                onPress={() => setSessionName(generateSessionName())}
+                style={{ alignSelf: 'flex-end', marginBottom: 10 }}
+              >
+                <Text style={{ color: theme.colors.primary, fontSize: 12 }}>
+                  🎲 Genera nome casuale
+                </Text>
+              </TouchableOpacity>
+              <TextInput
+                style={[styles.input, { 
+                  backgroundColor: theme.colors.surface, 
+                  color: theme.colors.onSurface,
+                  borderWidth: 1,
+                  borderColor: theme.colors.outline
+                }]}
+                placeholder="Il tuo nome"
+                placeholderTextColor={theme.colors.onSurfaceDisabled}
+                value={playerName}
+                onChangeText={setPlayerName}
+                onSubmitEditing={() => {
+                  if (sessionName && playerName && !loading) {
+                    createSession();
+                  }
+                }}
+                returnKeyType="go"
+              />
+              <Button
+                mode="contained"
+                onPress={createSession}
+                style={styles.button}
+                disabled={!sessionName || !playerName || loading}
+                loading={loading}
+              >
+                Crea Sessione
+              </Button>
+            </View>
+          )}
+
+          {/* Sezione Unisciti a una sessione */}
+          <TouchableOpacity 
+            style={[styles.sectionHeader, { backgroundColor: theme.colors.surface }]}
+            onPress={() => setExpandedSection(expandedSection === 'join' ? null : 'join')}
+          >
+            <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>
+              🔗  Unisciti a una sessione
+            </Text>
+            <Text style={[styles.expandIcon, { color: theme.colors.primary }]}>
+              {expandedSection === 'join' ? '▼' : '▶'}
+            </Text>
+          </TouchableOpacity>
+
+          {expandedSection === 'join' && (
+            <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+              <TextInput
+                style={[styles.input, { 
+                  backgroundColor: theme.colors.surface, 
+                  color: theme.colors.onSurface,
+                  borderWidth: 1,
+                  borderColor: theme.colors.outline
+                }]}
+                placeholder="Nome della sessione"
+                placeholderTextColor={theme.colors.onSurfaceDisabled}
+                value={sessionToJoin}
+                onChangeText={setSessionToJoin}
+              />
+              <TextInput
+                style={[styles.input, { 
+                  backgroundColor: theme.colors.surface, 
+                  color: theme.colors.onSurface,
+                  borderWidth: 1,
+                  borderColor: theme.colors.outline
+                }]}
+                placeholder="Il tuo nome"
+                placeholderTextColor={theme.colors.onSurfaceDisabled}
+                value={playerName}
+                onChangeText={setPlayerName}
+                onSubmitEditing={() => {
+                  if (sessionToJoin && playerName && !loading) {
+                    joinSession();
+                  }
+                }}
+                returnKeyType="go"
+              />
+              <Button
+                mode="contained"
+                onPress={joinSession}
+                style={styles.button}
+                disabled={!sessionToJoin || !playerName || loading}
+                loading={loading}
+              >
+                Unisciti
+              </Button>
+            </View>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Pulsanti fissi in basso */}
-      <View style={styles.bottomButtonsContainer}>
+      <View style={[styles.bottomButtonsContainer, { backgroundColor: theme.colors.background }]}>
         <Button
           mode="outlined"
           onPress={() => navigation.navigate('SessionHistory' as never)}

@@ -8,7 +8,7 @@ const { v4: uuidv4 } = require('uuid');
 // Inizializzazione app Express
 const app = express();
 app.use(cors({
-  origin: ['http://localhost:8081', 'http://127.0.0.1:8081', 'exp://127.0.0.1:8081', 'http://10.0.2.2:8081', 'exp://10.0.2.2:8081', 'http://192.168.26.103:8081', 'exp://192.168.26.103:8081'],
+  origin: ['http://localhost:8081', 'http://localhost:8082', 'http://127.0.0.1:8081', 'http://127.0.0.1:8082', 'exp://127.0.0.1:8081', 'exp://127.0.0.1:8082', 'http://10.0.2.2:8081', 'http://10.0.2.2:8082', 'exp://10.0.2.2:8081', 'exp://10.0.2.2:8082', 'http://192.168.26.103:8081', 'http://192.168.26.103:8082', 'exp://192.168.26.103:8081', 'exp://192.168.26.103:8082'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -95,43 +95,58 @@ app.post('/api/sessions', async (req, res) => {
   const { sessionName, playerName } = req.body;
   
   try {
-    const sessionId = await generateUniqueSessionCode();
+    // Validazione input
+    if (!sessionName || !playerName) {
+      return res.status(400).json({ error: 'sessionName e playerName sono richiesti' });
+    }
+
+    // Usa il nome della sessione come ID unico (convertito in maiuscolo per consistenza)
+    const sessionId = sessionName.toUpperCase().trim();
     const playerId = uuidv4();
 
-    db.run('INSERT INTO sessions (id, name) VALUES (?, ?)', [sessionId, sessionName], (err) => {
+    // Verifica se esiste già una sessione con questo nome
+    db.get('SELECT id FROM sessions WHERE id = ?', [sessionId], (err, existingSession) => {
       if (err) {
-        console.error('Errore inserimento sessione:', err);
-        if (err.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
-          return res.status(409).json({ error: 'ID sessione già esistente. Riprova.' });
-        }
+        console.error('Errore verifica sessione:', err);
         return res.status(500).json({ error: 'Errore del database: ' + err.message });
       }
 
-      db.run('INSERT INTO players (id, name, session_id) VALUES (?, ?, ?)', 
-        [playerId, playerName, sessionId], (err) => {
-          if (err) {
-            console.error('Errore inserimento giocatore:', err);
-            return res.status(500).json({ error: 'Errore inserimento giocatore: ' + err.message });
-          }
+      if (existingSession) {
+        return res.status(409).json({ error: 'Esiste già una sessione con questo nome. Scegli un nome diverso.' });
+      }
 
-          // Inizializza la sessione in memoria
-          activeSessions[sessionId] = {
-            id: sessionId,
-            name: sessionName,
-            players: [{
-              id: playerId,
-              name: playerName,
-              score: 0,
-              finished: false
-            }]
-          };
+      db.run('INSERT INTO sessions (id, name) VALUES (?, ?)', [sessionId, sessionName], (err) => {
+        if (err) {
+          console.error('Errore inserimento sessione:', err);
+          return res.status(500).json({ error: 'Errore del database: ' + err.message });
+        }
 
-          res.status(201).json({ 
-            sessionId, 
-            playerId,
-            sessionName
+        db.run('INSERT INTO players (id, name, session_id) VALUES (?, ?, ?)', 
+          [playerId, playerName, sessionId], (err) => {
+            if (err) {
+              console.error('Errore inserimento giocatore:', err);
+              return res.status(500).json({ error: 'Errore inserimento giocatore: ' + err.message });
+            }
+
+            // Inizializza la sessione in memoria
+            activeSessions[sessionId] = {
+              id: sessionId,
+              name: sessionName,
+              players: [{
+                id: playerId,
+                name: playerName,
+                score: 0,
+                finished: false
+              }]
+            };
+
+            res.status(201).json({ 
+              sessionId, 
+              playerId,
+              sessionName
+            });
           });
-        });
+      });
     });
   } catch (error) {
     console.error('Errore generale:', error);
@@ -149,9 +164,18 @@ app.post('/api/sessions/join', (req, res) => {
     if (!session) return res.status(404).json({ error: 'Sessione non trovata' });
 
     // Verifica se sono passati più di 10 minuti dalla creazione della sessione
-    const sessionCreatedAt = new Date(session.created_at);
+    // Convertiamo entrambi i timestamp in UTC per evitare problemi di fuso orario
+    const sessionCreatedAt = new Date(session.created_at + 'Z'); // Forza interpretazione UTC
     const now = new Date();
-    const timeDifference = (now - sessionCreatedAt) / (1000 * 60); // differenza in minuti
+    const timeDifference = (now.getTime() - sessionCreatedAt.getTime()) / (1000 * 60); // differenza in minuti
+
+    // Debug: log per capire il problema del timer
+    console.log('Debug Timer:');
+    console.log('- Session created_at (raw):', session.created_at);
+    console.log('- Session created_at (parsed UTC):', sessionCreatedAt);
+    console.log('- Current time:', now);
+    console.log('- Time difference (minutes):', timeDifference);
+    console.log('- Is expired (>10 min)?:', timeDifference > 10);
 
     if (timeDifference > 10) {
       return res.status(403).json({ error: 'Non è più possibile unirsi a questa sessione. Sono passati più di 10 minuti dalla sua creazione.' });

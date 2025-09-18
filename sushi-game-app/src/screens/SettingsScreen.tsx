@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Modal, Share, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, Modal, Share, Alert, BackHandler } from 'react-native';
 import { Text, Switch, Button, Divider, useTheme, IconButton } from 'react-native-paper';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useColorScheme } from '../theme/ThemeProvider';
 import SoundManager from '../utils/SoundManager';
 import useGameStore from '../store/gameStore';
@@ -30,6 +30,32 @@ const SettingsScreen = () => {
       setSessionStartTime(new Date());
     }
   }, [sessionId]);
+
+  // Gestione del pulsante indietro del telefono
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        // Se il modale dei credits è aperto, chiudilo
+        if (creditsVisible) {
+          setCreditsVisible(false);
+          return true; // Previene il comportamento di default
+        }
+        
+        // Verifica se possiamo tornare indietro nello stack di navigazione
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+          return true; // Previene il comportamento di default
+        }
+        
+        // Se non possiamo tornare indietro, lascia che l'app gestisca il comportamento di default
+        return false; // Permette il comportamento di default (chiusura app)
+      };
+
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => backHandler.remove();
+    }, [navigation, creditsVisible])
+  );
 
   const shareSession = async () => {
     if (!sessionId || !sessionName) {
@@ -70,7 +96,7 @@ const SettingsScreen = () => {
 
       {/* Appearance Section */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>Appearance</Text>
+        <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>Aspetto</Text>
         <View style={styles.settingRow}>
           <Text style={{ color: theme.colors.onSurface, fontSize: 16 }}>{isDarkMode ? 'Tema Scuro' : 'Tema Chiaro'}</Text>
           <View style={styles.switchContainer}>
@@ -220,6 +246,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
+    marginTop: 40,
     marginBottom: 30,
     textAlign: 'center',
   },

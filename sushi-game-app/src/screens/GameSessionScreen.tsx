@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Animated, Modal, Share, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Animated, Modal, Share, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useTheme, Button, Card, TextInput } from 'react-native-paper';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import useGameStore from '../store/gameStore';
@@ -160,8 +160,7 @@ const GameSessionScreen = () => {
       {/* Animazioni */}
       <SushiAnimation isVisible={showSushiAnimation} />
       <SushiStack pieceCount={players.find(p => p.name === playerName)?.score || 0} />
-      <Fireworks isVisible={gameEnded} />
-      <SettingsButton />
+      <Fireworks isVisible={false} />
       
       <Text style={[styles.sessionLabel, { color: theme.colors.onSurface }]}>
         Sessione
@@ -259,7 +258,10 @@ const GameSessionScreen = () => {
           
           <Button 
             mode="contained" 
-            onPress={() => navigation.navigate('Home' as never)}
+            onPress={() => {
+              useGameStore.getState().resetGame();
+              navigation.navigate('Home' as never);
+            }}
             style={styles.newGameButton}
           >
             Nuova Partita
@@ -273,6 +275,7 @@ const GameSessionScreen = () => {
         transparent={true}
         animationType="slide"
         onRequestClose={() => setShowLeaderboardModal(false)}
+        statusBarTranslucent={true}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
@@ -322,6 +325,7 @@ const GameSessionScreen = () => {
                 mode="contained" 
                 onPress={() => {
                   setShowLeaderboardModal(false);
+                  useGameStore.getState().resetGame();
                   navigation.navigate('Home' as never);
                 }}
                 style={styles.modalButton}
@@ -339,64 +343,96 @@ const GameSessionScreen = () => {
         transparent={true}
         animationType="slide"
         onRequestClose={() => setShowSaveModal(false)}
+        statusBarTranslucent={true}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
-            <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>
-              💾 Salva Sessione
-            </Text>
-            
-            <Text style={[styles.saveModalDescription, { color: theme.colors.onSurface }]}>
-              Salva questa partita per rivederla in futuro
-            </Text>
-            
-            <TextInput
-              mode="outlined"
-              label="Nome del ristorante"
-              placeholder="Es. Sushi Zen, Sakura, ..."
-              value={restaurantName}
-              onChangeText={setRestaurantName}
-              style={styles.restaurantInput}
-              theme={{ colors: { primary: theme.colors.primary } }}
-            />
-            
-            <View style={styles.saveModalInfo}>
-              <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
-                Sessione: {sessionName}
-              </Text>
-              <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
-                Data: {SessionStorageService.formatDate(new Date())}
-              </Text>
-              <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
-                Vincitore: {sortedPlayers[0]?.name || 'Nessuno'} ({sortedPlayers[0]?.score || 0} pezzi)
-              </Text>
-            </View>
-            
-            <View style={styles.modalButtons}>
-              <Button 
-                mode="outlined" 
-                onPress={() => {
-                  setShowSaveModal(false);
-                  setRestaurantName('');
-                }}
-                style={styles.modalButton}
-                disabled={isSaving}
+          <KeyboardAvoidingView 
+            style={styles.keyboardAvoidingContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+          >
+            <TouchableOpacity 
+              style={styles.modalTouchableOverlay}
+              activeOpacity={1}
+              onPress={() => {
+                setShowSaveModal(false);
+                setRestaurantName('');
+              }}
+            >
+              <TouchableOpacity 
+                style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}
+                activeOpacity={1}
+                onPress={(e) => e.stopPropagation()}
               >
-                Annulla
-              </Button>
-              <Button 
-                mode="contained" 
-                onPress={saveSessionLocally}
-                style={styles.modalButton}
-                loading={isSaving}
-                disabled={isSaving}
-              >
-                Salva
-              </Button>
-            </View>
-          </View>
+                <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>
+                  💾 Salva Sessione
+                </Text>
+                
+                <Text style={[styles.saveModalDescription, { color: theme.colors.onSurface }]}>
+                  Salva questa partita per rivederla in futuro
+                </Text>
+                
+                <TextInput
+                  mode="outlined"
+                  label="Nome del ristorante"
+                  placeholder="Es. Sushi Zen, Sakura, ..."
+                  value={restaurantName}
+                  onChangeText={setRestaurantName}
+                  style={styles.restaurantInput}
+                  theme={{ colors: { primary: theme.colors.primary } }}
+                  autoFocus={true}
+                  returnKeyType="done"
+                  onSubmitEditing={() => {
+                    if (restaurantName.trim()) {
+                      saveSessionLocally();
+                    }
+                  }}
+                />
+                
+                <View style={styles.saveModalInfo}>
+                  <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
+                    Sessione: {sessionName}
+                  </Text>
+                  <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
+                    Data: {SessionStorageService.formatDate(new Date())}
+                  </Text>
+                  <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
+                    Vincitore: {sortedPlayers[0]?.name || 'Nessuno'} ({sortedPlayers[0]?.score || 0} pezzi)
+                  </Text>
+                </View>
+                
+                <View style={styles.modalButtons}>
+                  <Button 
+                    mode="outlined" 
+                    onPress={() => {
+                      setShowSaveModal(false);
+                      setRestaurantName('');
+                    }}
+                    style={styles.modalButton}
+                    disabled={isSaving}
+                  >
+                    Annulla
+                  </Button>
+                  <Button 
+                    mode="contained" 
+                    onPress={saveSessionLocally}
+                    style={styles.modalButton}
+                    loading={isSaving}
+                    disabled={isSaving}
+                  >
+                    Salva
+                  </Button>
+                </View>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
+      
+      {/* Settings Button posizionato in basso a destra */}
+      <View style={styles.settingsButtonContainer}>
+        <SettingsButton />
+      </View>
     </View>
   );
 };
@@ -405,12 +441,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 20,
+    paddingTop: 60, // Aumentato per evitare sovrapposizione con il notch
   },
   sessionLabel: {
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 2,
     opacity: 0.7,
+    marginTop: 10, // Aggiunto margine superiore per abbassare ulteriormente
   },
   title: {
     fontSize: 24,
@@ -528,15 +566,35 @@ const styles = StyleSheet.create({
   },
   newGameButton: {
     marginTop: 20,
-    paddingHorizontal: 30,
+    paddingHorizontal: 50, // Aumentato da 30 a 50
+    paddingVertical: 15,   // Aggiunto padding verticale
     borderRadius: 30,
+    minWidth: 200,         // Larghezza minima
   },
   // Stili per la modale
   modalOverlay: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  keyboardAvoidingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  modalTouchableOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
   },
   modalContent: {
     width: '90%',
@@ -586,6 +644,9 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     borderRadius: 25,
+    paddingHorizontal: 20, // Aggiunto padding orizzontale
+    paddingVertical: 12,   // Aggiunto padding verticale
+    minWidth: 120,         // Larghezza minima
   },
   leaderboardList: {
     maxHeight: 300,
@@ -610,6 +671,12 @@ const styles = StyleSheet.create({
   saveInfoLabel: {
     fontSize: 14,
     marginBottom: 5,
+  },
+  settingsButtonContainer: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    zIndex: 10,
   },
 });
 
