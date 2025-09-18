@@ -8,8 +8,8 @@ import SettingsButton from '../components/SettingsButton';
 import useGameStore from '../store/gameStore';
 import { useFonts, JotiOne_400Regular } from '@expo-google-fonts/joti-one';
 
-// URL del server - usa l'IP della macchina per Android
-const SERVER_URL = Platform.OS === 'android' ? 'http://192.168.178.67:3000' : 'http://localhost:3000';
+// URL del server - Railway deployment
+const SERVER_URL = 'https://sushi-streak-production.up.railway.app';
 type RootStackParamList = {
   Home: undefined;
   GameSession: {

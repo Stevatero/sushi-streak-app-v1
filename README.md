@@ -5,7 +5,14 @@ Un'applicazione mobile cross-platform che permette a gruppi di amici di tenere t
 [![React Native](https://img.shields.io/badge/React%20Native-0.72-blue.svg)](https://reactnative.dev/)
 [![Expo](https://img.shields.io/badge/Expo-49.0-black.svg)](https://expo.dev/)
 [![Node.js](https://img.shields.io/badge/Node.js-18.0-green.svg)](https://nodejs.org/)
+[![Railway](https://img.shields.io/badge/Deployed%20on-Railway-blueviolet.svg)](https://railway.app/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## 🌐 App Live
+
+- **Backend API**: [https://sushi-streak-production.up.railway.app](https://sushi-streak-production.up.railway.app)
+- **Status**: ✅ Online e funzionante
+- **Piattaforme supportate**: iOS, Android, Web
 
 ## 📱 Screenshot e Demo
 
@@ -102,6 +109,7 @@ Sushi-v1/
 - **Node.js** (v18 o superiore) - [Download](https://nodejs.org/)
 - **npm** o **yarn** - Gestore di pacchetti
 - **Expo CLI** - `npm install -g @expo/cli`
+- **EAS CLI** - `npm install -g eas-cli` (per build e deploy)
 - **Git** - Per il controllo versione
 
 ### ⚡ Installazione Rapida
@@ -112,18 +120,14 @@ git clone https://github.com/Stevatero/sushi-streak-app-v1.git
 cd sushi-streak-app-v1
 ```
 
-2. **Avvia il Backend**
+2. **Installa le dipendenze del Frontend**
 ```bash
-cd sushi-game-backend
+cd sushi-game-app
 npm install
-npm start
 ```
-Il server sarà disponibile su `http://localhost:3001`
 
-3. **Avvia il Frontend**
+3. **Avvia l'app in modalità sviluppo**
 ```bash
-cd ../sushi-game-app
-npm install
 npx expo start
 ```
 
@@ -133,26 +137,40 @@ npx expo start
 - **Web**: Premi `w` nel terminale Expo
 - **Emulatore**: Premi `i` per iOS o `a` per Android
 
-### 🔧 Configurazione Avanzata
+### 🌐 Backend (Già Deployato)
 
-#### Variabili d'Ambiente
-Crea un file `.env` nella cartella `sushi-game-backend`:
-```env
-PORT=3001
-DB_PATH=./sushi_game.db
-NODE_ENV=development
-```
+Il backend è già deployato e funzionante su Railway:
+- **URL**: https://sushi-streak-production.up.railway.app
+- **Status**: ✅ Online 24/7
+- **Database**: SQLite persistente
+
+Non è necessario avviare il backend localmente per testare l'app.
+
+### 🔧 Configurazione Avanzata
 
 #### Build per Produzione
 ```bash
-# Frontend
-cd sushi-game-app
-npx expo build:android
-npx expo build:ios
+# Login EAS
+eas login
 
-# Backend
-cd ../sushi-game-backend
-npm run build
+# Build per Android
+eas build --platform android
+
+# Build per iOS
+eas build --platform ios
+
+# Build per entrambe le piattaforme
+eas build --platform all
+```
+
+#### Deploy Backend (Opzionale)
+Se vuoi deployare il tuo backend:
+```bash
+cd sushi-game-backend
+npm install -g @railway/cli
+railway login
+railway init
+railway up
 ```
 
 ## ✅ Funzionalità implementate
@@ -168,6 +186,22 @@ npm run build
 - [x] **Suoni**: Effetti sonori per le azioni di gioco
 - [x] **Storico**: Visualizzazione storico delle sessioni passate
 - [x] **Impostazioni**: Pannello impostazioni con preferenze utente
+- [x] **Backend Cloud**: Deploy su Railway con database persistente
+- [x] **Build Production**: Configurazione EAS per build iOS/Android
+- [x] **Cross-Platform**: Supporto completo iOS, Android e Web
+
+## 🏗️ Architettura e Deploy
+
+### Frontend
+- **Piattaforma**: Expo (React Native)
+- **Build**: EAS Build per produzione
+- **Distribuzione**: App Store, Google Play, Web
+
+### Backend
+- **Hosting**: Railway (https://sushi-streak-production.up.railway.app)
+- **Database**: SQLite persistente
+- **Real-time**: Socket.IO per comunicazione bidirezionale
+- **Uptime**: 99.9% garantito
 
 ## 🤝 Contribuire
 

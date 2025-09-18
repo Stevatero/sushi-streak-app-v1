@@ -3,7 +3,7 @@
     "name": "Sushi Streak",
     "slug": "sushi-streak-app",
     "description": "Sfida i tuoi amici e scopri chi è il vero campione di sushi! Un'app per tenere traccia di chi mangia più sushi durante una cena.",
-    "owner": "Stevatero",
+    "owner": "stevatero",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,7 +25,11 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -33,6 +37,11 @@
     "plugins": [
       "expo-audio",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2bc7c94c-ecc7-4963-906d-fa506812a18a"
+      }
+    }
   }
 }

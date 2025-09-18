@@ -1,7 +1,7 @@
 {
   "name": "sushi-streak-app",
   "version": "1.0.0",
-  "description": "Un'app mobile per tenere traccia di chi mangia più sushi durante una cena con gli amici",
+  "description": "Un'app mobile cross-platform per tenere traccia di chi mangia più sushi durante una cena con gli amici. Backend deployato su Railway con real-time multiplayer.",
   "main": "index.ts",
   "keywords": [
     "react-native",
@@ -9,7 +9,12 @@
     "sushi",
     "game",
     "real-time",
-    "socket.io"
+    "socket.io",
+    "multiplayer",
+    "cross-platform",
+    "railway",
+    "mobile-app",
+    "typescript"
   ],
   "author": {
     "name": "Stevatero",

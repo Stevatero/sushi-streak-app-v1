@@ -8,7 +8,7 @@ const { v4: uuidv4 } = require('uuid');
 // Inizializzazione app Express
 const app = express();
 app.use(cors({
-  origin: ['http://localhost:8081', 'http://localhost:8082', 'http://127.0.0.1:8081', 'http://127.0.0.1:8082', 'exp://127.0.0.1:8081', 'exp://127.0.0.1:8082', 'http://10.0.2.2:8081', 'http://10.0.2.2:8082', 'exp://10.0.2.2:8081', 'exp://10.0.2.2:8082', 'http://192.168.26.103:8081', 'http://192.168.26.103:8082', 'exp://192.168.26.103:8081', 'exp://192.168.26.103:8082'],
+  origin: ['http://localhost:8081', 'http://localhost:8082', 'http://127.0.0.1:8081', 'http://127.0.0.1:8082', 'exp://127.0.0.1:8081', 'exp://127.0.0.1:8082', 'http://10.0.2.2:8081', 'http://10.0.2.2:8082', 'exp://10.0.2.2:8081', 'exp://10.0.2.2:8082', 'http://192.168.26.103:8081', 'http://192.168.26.103:8082', 'exp://192.168.26.103:8081', 'exp://192.168.26.103:8082', 'https://sushi-streak-production.up.railway.app'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true

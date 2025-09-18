@@ -1,9 +1,9 @@
 {
   "name": "sushi-streak-backend",
   "version": "1.0.0",
-  "description": "Backend Node.js per Sushi Streak App - Server real-time per il gioco del sushi",
+  "description": "Backend Node.js per Sushi Streak App - Server real-time deployato su Railway per il gioco multiplayer del sushi",
   "main": "server.js",
-  "keywords": ["sushi", "game", "socket.io", "express", "real-time", "nodejs"],
+  "keywords": ["sushi", "game", "socket.io", "express", "real-time", "nodejs", "railway", "multiplayer", "backend", "sqlite", "cors"],
   "author": {
     "name": "Stevatero",
     "url": "https://github.com/Stevatero"
