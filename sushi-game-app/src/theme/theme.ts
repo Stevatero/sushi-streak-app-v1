@@ -22,9 +22,7 @@ export const darkTheme = {
   ...MD3DarkTheme,
   colors: {
     ...MD3DarkTheme.colors,
-    primary: '#FF9E80', // Arancione più tenue
-    secondary: '#4ECDC4',
-    background: '#2A2A2A', // Grigio più chiaro
+    primary: '#FF9E80',////Aaipc oteepEùd e uGaro
     surface: '#3A3A3A', // Grigio più chiaro
     error: '#FF5252',
     text: '#E0E0E0', // Bianco meno brillante
@@ -35,3 +33,4 @@ export const darkTheme = {
     notification: '#FF9E80', // Arancione più tenue
   },
 };
+9E80 // Arancione più tenue

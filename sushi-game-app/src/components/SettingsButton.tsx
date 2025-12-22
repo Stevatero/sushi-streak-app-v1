@@ -24,7 +24,7 @@ const SettingsButton = () => {
           styles.button,
           {
             backgroundColor: isDarkMode 
-              ? 'rgba(255, 255, 255, 0.5)' 
+              ? 'rgba(255, 255, 255, 0.2)' 
               : 'rgba(255, 255, 255, 0.8)',
             borderWidth: 1,
             borderColor: theme.colors.outline,

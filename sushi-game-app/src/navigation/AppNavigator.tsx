@@ -15,7 +15,13 @@ interface AppNavigatorProps {
 const AppNavigator = ({ navigationRef }: AppNavigatorProps) => {
   return (
     <NavigationContainer ref={navigationRef}>
-      <Stack.Navigator initialRouteName="Home">
+      <Stack.Navigator
+        initialRouteName="Home"
+        screenOptions={{
+          animation: 'fade',
+          gestureEnabled: true
+        }}
+      >
         <Stack.Screen 
           name="Home" 
           component={HomeScreen} 
@@ -24,17 +30,17 @@ const AppNavigator = ({ navigationRef }: AppNavigatorProps) => {
         <Stack.Screen 
           name="GameSession" 
           component={GameSessionScreen} 
-          options={{ headerShown: false }}
+          options={{ headerShown: false, animation: 'slide_from_right' }}
         />
         <Stack.Screen 
           name="Settings" 
           component={SettingsScreen} 
-          options={{ headerShown: false }}
+          options={{ headerShown: false, presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         <Stack.Screen 
           name="SessionHistory" 
           component={SessionHistoryScreen} 
-          options={{ headerShown: false }}
+          options={{ headerShown: false, animation: 'slide_from_right' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

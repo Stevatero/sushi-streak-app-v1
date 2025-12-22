@@ -233,9 +233,9 @@ const GameSessionScreen = () => {
                 styles.playerRow, 
                 item.name === playerName ? { backgroundColor: theme.colors.primaryContainer } : null
               ]}>
-                <Text style={styles.rank}>{index + 1}</Text>
-                <Text style={styles.playerName}>{item.name}</Text>
-                <Text style={styles.score}>{item.score}   🍣</Text>
+                <Text style={[styles.rank, { color: isDarkMode ? '#FFFFFF' : undefined }]}>{index + 1}</Text>
+                <Text style={[styles.playerName, { color: isDarkMode ? '#FFFFFF' : undefined }]}>{item.name}</Text>
+                <Text style={[styles.score, { color: isDarkMode ? '#FFFFFF' : undefined }]}>{item.score}   🍣</Text>
                 {item.finished && <Text style={styles.finishedTag}>Finito</Text>}
               </View>
             )}
@@ -275,7 +275,7 @@ const GameSessionScreen = () => {
               styles.finishButtonBottomLeft,
               {
                 backgroundColor: isDarkMode 
-                  ? 'rgba(255, 255, 255, 0.5)' 
+                  ? 'rgba(255, 255, 255, 1)' 
                   : 'rgba(255, 255, 255, 0.8)'
               }
             ]}
@@ -327,10 +327,10 @@ const GameSessionScreen = () => {
                   <Text style={[styles.modalRank, { color: theme.colors.primary }]}>
                     {index + 1}°
                   </Text>
-                  <Text style={[styles.modalPlayerName, { color: theme.colors.onSurface }]}>
+                  <Text style={[styles.modalPlayerName, { color: isDarkMode ? '#FFFFFF' : theme.colors.onSurface }]}>
                     {item.name}
                   </Text>
-                  <Text style={[styles.modalScore, { color: theme.colors.secondary }]}>
+                  <Text style={[styles.modalScore, { color: isDarkMode ? '#FFFFFF' : theme.colors.secondary }]}>
                     {item.score}   🍣
                   </Text>
                 </View>

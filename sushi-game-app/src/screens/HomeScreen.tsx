@@ -5,10 +5,10 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SettingsButton from '../components/SettingsButton';
+import shareService from '../services/shareService';
 import useGameStore from '../store/gameStore';
 import { useFonts, JotiOne_400Regular } from '@expo-google-fonts/joti-one';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
-import AnimatedBackground from '../components/AnimatedBackground';
 
 // URL del server - Railway deployment
 const SERVER_URL = 'http://57.131.31.119:3005';
@@ -67,11 +67,46 @@ const HomeScreen = () => {
   };
 
   // Funzione per gestire deep links
-  const handleDeepLink = (url: string) => {
-    const sessionCode = url.split('session=')[1];
-    if (sessionCode) {
-      setSessionToJoin(sessionCode);
-      setExpandedSection('join');
+  const handleDeepLink = async (url: string) => {
+    try {
+      let sessionCode: string | undefined;
+      const lower = url.toLowerCase();
+      
+      // Path style: .../join/ABC123 or sushi-streak://join/ABC123
+      const pathMatch = lower.match(/\/join\/([a-z0-9]+)/i) || lower.match(/sushi-streak:\/\/join\/([a-z0-9]+)/i);
+      if (pathMatch && pathMatch[1]) {
+        sessionCode = pathMatch[1];
+      }
+      
+      // Query style: ...?session=ABC123
+      if (!sessionCode) {
+        const qIndex = url.indexOf('?');
+        if (qIndex !== -1) {
+          const query = url.substring(qIndex + 1);
+          const params = query.split('&');
+          for (const p of params) {
+            const [k, v] = p.split('=');
+            if (k === 'session' && v) {
+              sessionCode = v;
+              break;
+            }
+          }
+        }
+      }
+      
+      if (sessionCode) {
+        const normalized = sessionCode.toUpperCase().trim();
+        setSessionToJoin(normalized);
+        setExpandedSection('join');
+        
+        // Recupera info della sessione per impostare automaticamente il nome
+        const info = await shareService.getSessionInfo(normalized);
+        if (info?.sessionName) {
+          setSessionName(info.sessionName);
+        }
+      }
+    } catch (e) {
+      console.error('Errore nel parsing del deep link:', e);
     }
   };
 
@@ -96,12 +131,12 @@ const HomeScreen = () => {
     const handleInitialURL = async () => {
       const initialUrl = await Linking.getInitialURL();
       if (initialUrl) {
-        handleDeepLink(initialUrl);
+        await handleDeepLink(initialUrl);
       }
     };
 
-    const linkingListener = Linking.addEventListener('url', (event) => {
-      handleDeepLink(event.url);
+    const linkingListener = Linking.addEventListener('url', async (event) => {
+      await handleDeepLink(event.url);
     });
 
     handleInitialURL();
@@ -245,7 +280,6 @@ const HomeScreen = () => {
 
   return (
     <View style={[styles.mainContainer, { backgroundColor: theme.colors.background }]}>
-      <AnimatedBackground />
       <KeyboardAvoidingView 
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
