@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HomeScreen from '../screens/HomeScreen';
 import GameSessionScreen from '../screens/GameSessionScreen';
@@ -8,9 +8,13 @@ import SessionHistoryScreen from '../screens/SessionHistoryScreen';
 
 const Stack = createNativeStackNavigator();
 
-const AppNavigator = () => {
+interface AppNavigatorProps {
+  navigationRef: React.RefObject<NavigationContainerRef<any>>;
+}
+
+const AppNavigator = ({ navigationRef }: AppNavigatorProps) => {
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator initialRouteName="Home">
         <Stack.Screen 
           name="Home" 

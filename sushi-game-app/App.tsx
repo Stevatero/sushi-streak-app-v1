@@ -1,14 +1,16 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { PaperProvider } from 'react-native-paper';
-import { Linking } from 'react-native';
+import { Linking, Alert } from 'react-native';
 import AppNavigator from './src/navigation/AppNavigator';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeProvider, useColorScheme } from './src/theme/ThemeProvider';
 import { shareService } from './src/services/shareService';
+import { NavigationContainerRef } from '@react-navigation/native';
 
 const ThemedApp = () => {
   const { theme, isDarkMode } = useColorScheme();
+  const navigationRef = useRef<NavigationContainerRef<any>>(null);
   
   useEffect(() => {
     // Gestisce i deep link quando l'app è già aperta
@@ -25,10 +27,21 @@ const ThemedApp = () => {
         shareService.handleJoinLink(sessionId).then((result) => {
           if (result.success && result.sessionInfo) {
             console.log('Sessione trovata:', result.sessionInfo);
-            // Qui potresti navigare automaticamente alla schermata di join
-            // o mostrare un modal con le informazioni della sessione
+            // Naviga automaticamente alla schermata di gioco con il sessionId
+            if (navigationRef.current) {
+              navigationRef.current.navigate('GameSession', { 
+                sessionId: sessionId,
+                sessionInfo: result.sessionInfo,
+                joinMode: true
+              });
+            }
           } else {
             console.log('Sessione non trovata o non valida');
+            Alert.alert(
+              "Errore",
+              "La sessione non è stata trovata o non è più valida.",
+              [{ text: "OK" }]
+            );
           }
         });
       }
@@ -57,7 +70,7 @@ const ThemedApp = () => {
   return (
     <PaperProvider theme={theme}>
       <StatusBar style={isDarkMode ? 'light' : 'dark'} />
-      <AppNavigator />
+      <AppNavigator navigationRef={navigationRef as React.RefObject<NavigationContainerRef<any>>} />
     </PaperProvider>
   );
 };

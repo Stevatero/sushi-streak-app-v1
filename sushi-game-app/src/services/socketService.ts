@@ -2,7 +2,7 @@ import { io, Socket } from 'socket.io-client';
 import { Platform } from 'react-native';
 
 // Indirizzo del server backend - Railway deployment
-const SOCKET_URL = 'https://sushi-streak-production.up.railway.app';
+const SOCKET_URL = 'http://57.131.31.119:3005';
 
 class SocketService {
   private socket: Socket | null = null;
@@ -12,8 +12,16 @@ class SocketService {
   // Inizializza la connessione socket
   connect() {
     if (!this.socket) {
-      this.socket = io(SOCKET_URL);
+      this.socket = io(SOCKET_URL, {
+        transports: ['websocket'], // Forza WebSocket per evitare problemi di polling
+        reconnectionAttempts: 5,
+        timeout: 10000
+      });
       console.log('Socket connesso');
+      
+      this.socket.on('connect_error', (err) => {
+        console.error('Socket Connection Error:', err.message);
+      });
     }
     return this.socket;
   }

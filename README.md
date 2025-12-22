@@ -10,7 +10,7 @@ Un'applicazione mobile cross-platform che permette a gruppi di amici di tenere t
 
 ## 🌐 App Live
 
-- **Backend API**: [https://sushi-streak-production.up.railway.app](https://sushi-streak-production.up.railway.app)
+- **Backend API**: [http://sushi.dietalab.net](http://sushi.dietalab.net)
 - **Status**: ✅ Online e funzionante
 - **Piattaforme supportate**: iOS, Android, Web
 

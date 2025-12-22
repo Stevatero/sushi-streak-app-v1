@@ -7,9 +7,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import SettingsButton from '../components/SettingsButton';
 import useGameStore from '../store/gameStore';
 import { useFonts, JotiOne_400Regular } from '@expo-google-fonts/joti-one';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import AnimatedBackground from '../components/AnimatedBackground';
 
 // URL del server - Railway deployment
-const SERVER_URL = 'https://sushi-streak-production.up.railway.app';
+const SERVER_URL = 'http://57.131.31.119:3005';
 type RootStackParamList = {
   Home: undefined;
   GameSession: {
@@ -34,6 +36,9 @@ const HomeScreen = () => {
   const theme = useTheme();
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const resetGame = useGameStore(state => state.resetGame);
+  const headerOpacity = useSharedValue(0);
+  const headerTranslateY = useSharedValue(-20);
+  const iconScale = useSharedValue(0.9);
 
   // Carica il font Google Joti One
   const [fontsLoaded] = useFonts({
@@ -105,6 +110,18 @@ const HomeScreen = () => {
       linkingListener.remove();
     };
   }, []);
+  useEffect(() => {
+    headerOpacity.value = withTiming(1, { duration: 600, easing: Easing.out(Easing.quad) });
+    headerTranslateY.value = withTiming(0, { duration: 600, easing: Easing.out(Easing.quad) });
+    iconScale.value = withTiming(1, { duration: 600, easing: Easing.out(Easing.quad) });
+  }, []);
+  const headerStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTranslateY.value }]
+  }));
+  const iconStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: iconScale.value }]
+  }));
 
   const createSession = async () => {
     if (!sessionName || !playerName) return;
@@ -127,7 +144,14 @@ const HomeScreen = () => {
         }),
       });
 
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error('Risposta server non valida:', text);
+        throw new Error('Il server ha restituito una risposta non valida (HTML invece di JSON). Verifica che il server sia attivo.');
+      }
 
       if (!response.ok) {
         throw new Error(data.error || 'Errore durante la creazione della sessione');
@@ -175,7 +199,14 @@ const HomeScreen = () => {
       });
 
       clearTimeout(timeoutId);
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error('Risposta server non valida:', text);
+        throw new Error('Il server ha restituito una risposta non valida. Verifica che il server sia attivo.');
+      }
 
       if (!response.ok) {
         throw new Error(data.error || 'Errore durante l\'accesso alla sessione');
@@ -214,6 +245,7 @@ const HomeScreen = () => {
 
   return (
     <View style={[styles.mainContainer, { backgroundColor: theme.colors.background }]}>
+      <AnimatedBackground />
       <KeyboardAvoidingView 
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -224,14 +256,14 @@ const HomeScreen = () => {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.header}>
-            <Image 
+          <Animated.View style={[styles.header, headerStyle]}>
+            <Animated.Image 
               source={require('../../assets/icon.png')} 
-              style={styles.appIcon}
+              style={[styles.appIcon, iconStyle as any]}
               resizeMode="contain"
             />
             <Text style={[styles.title, { color: theme.colors.primary }]}>Sushi Streak</Text>
-          </View>
+          </Animated.View>
           
           {error ? (
             <View style={[styles.errorContainer, { backgroundColor: theme.colors.errorContainer }]}>

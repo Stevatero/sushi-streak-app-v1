@@ -4,7 +4,7 @@
     "slug": "sushi-streak-app",
     "description": "Sfida i tuoi amici e scopri chi è il vero campione di sushi! Un'app per tenere traccia di chi mangia più sushi durante una cena.",
     "owner": "stevatero",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -24,8 +24,8 @@
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true,
           "NSExceptionDomains": {
-            "sushi-streak-production.up.railway.app": {
-              "NSExceptionAllowsInsecureHTTPLoads": false,
+            "sushi.dietalab.net": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
               "NSExceptionMinimumTLSVersion": "1.0",
               "NSExceptionRequiresForwardSecrecy": false
             }
@@ -53,15 +53,23 @@
         "android.permission.ACCESS_NETWORK_STATE"
       ],
       "package": "com.stevatero.sushistreakapp",
-      "usesCleartextTraffic": false,
+      "usesCleartextTraffic": true,
       "intentFilters": [
         {
           "action": "VIEW",
           "autoVerify": true,
           "data": [
             {
+              "scheme": "http",
+              "host": "57.131.31.119"
+            },
+            {
+              "scheme": "http",
+              "host": "sushi.dietalab.net"
+            },
+            {
               "scheme": "https",
-              "host": "sushi-streak-production.up.railway.app"
+              "host": "sushi.dietalab.net"
             },
             {
               "scheme": "sushi-streak"

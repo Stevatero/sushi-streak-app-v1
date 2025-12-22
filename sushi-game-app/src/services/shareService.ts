@@ -2,7 +2,7 @@ import { Share } from 'react-native';
 import { Linking } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 
-const SERVER_URL = 'https://sushi-streak-production.up.railway.app';
+const SERVER_URL = 'http://57.131.31.119:3005';
 
 export interface ShareableSession {
   sessionId: string;
