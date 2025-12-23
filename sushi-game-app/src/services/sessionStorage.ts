@@ -18,7 +18,17 @@ export interface SavedSession {
   duration?: string;
 }
 
+export interface ActiveSession {
+  sessionId: string;
+  sessionName?: string;
+  playerId: string;
+  playerName: string;
+  isHost: boolean;
+  startedAt: string;
+}
+
 const STORAGE_KEY = 'saved_sessions';
+const ACTIVE_SESSION_KEY = 'active_session';
 
 export class SessionStorageService {
   static async saveSession(session: SavedSession): Promise<void> {
@@ -59,6 +69,32 @@ export class SessionStorageService {
     } catch (error) {
       console.error('Errore nel pulire le sessioni:', error);
       throw new Error('Impossibile eliminare tutte le sessioni');
+    }
+  }
+
+  static async saveActiveSession(session: ActiveSession): Promise<void> {
+    try {
+      await AsyncStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(session));
+    } catch (error) {
+      console.error('Errore nel salvare la sessione attiva:', error);
+    }
+  }
+
+  static async getActiveSession(): Promise<ActiveSession | null> {
+    try {
+      const json = await AsyncStorage.getItem(ACTIVE_SESSION_KEY);
+      return json ? JSON.parse(json) : null;
+    } catch (error) {
+      console.error('Errore nel recuperare la sessione attiva:', error);
+      return null;
+    }
+  }
+
+  static async clearActiveSession(): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(ACTIVE_SESSION_KEY);
+    } catch (error) {
+      console.error('Errore nel pulire la sessione attiva:', error);
     }
   }
 

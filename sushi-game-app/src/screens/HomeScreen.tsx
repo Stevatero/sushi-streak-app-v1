@@ -6,6 +6,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SettingsButton from '../components/SettingsButton';
 import shareService from '../services/shareService';
+import { SessionStorageService, ActiveSession } from '../services/sessionStorage';
 import { resolveServerUrl } from '../services/networkConfig';
 import useGameStore from '../store/gameStore';
 import { useFonts, JotiOne_400Regular } from '@expo-google-fonts/joti-one';
@@ -32,6 +33,7 @@ const HomeScreen = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [expandedSection, setExpandedSection] = useState<'create' | 'join' | null>(null);
+  const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
 
   const theme = useTheme();
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -149,6 +151,24 @@ const HomeScreen = () => {
     (async () => {
       SERVER_URL = await resolveServerUrl();
     })();
+  }, []);
+  useEffect(() => {
+    const checkActive = async () => {
+      const saved = await SessionStorageService.getActiveSession();
+      if (saved && saved.sessionId) {
+        const info = await shareService.getSessionInfo(saved.sessionId);
+        const started = new Date(saved.startedAt).getTime();
+        const expired = (Date.now() - started) > (10 * 60 * 1000);
+        if (info && info.isActive && !expired) {
+          setActiveSession(saved);
+        } else {
+          setActiveSession(null);
+        }
+      } else {
+        setActiveSession(null);
+      }
+    };
+    checkActive();
   }, []);
   useEffect(() => {
     headerOpacity.value = withTiming(1, { duration: 600, easing: Easing.out(Easing.quad) });
@@ -322,6 +342,33 @@ const HomeScreen = () => {
                   🔄 Riprova
                 </Button>
               )}
+            </View>
+          ) : null}
+          
+          {activeSession ? (
+            <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+              <Text style={[styles.cardTitle, { color: theme.colors.primary }]}>
+                Sessione attiva trovata
+              </Text>
+              <Text style={{ color: theme.colors.onSurface }}>
+                {activeSession.sessionName || activeSession.sessionId}
+              </Text>
+              <Button
+                mode="contained"
+                onPress={() => {
+                  navigation.navigate('GameSession', {
+                    sessionId: activeSession.sessionId,
+                    sessionName: activeSession.sessionName,
+                    playerName: activeSession.playerName,
+                    isHost: activeSession.isHost,
+                    playerId: activeSession.playerId
+                  });
+                }}
+                style={styles.button}
+                icon="refresh"
+              >
+                Riconnettiti
+              </Button>
             </View>
           ) : null}
 

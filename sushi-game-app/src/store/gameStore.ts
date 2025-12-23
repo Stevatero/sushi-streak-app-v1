@@ -40,19 +40,16 @@ const useGameStore = create<GameState>((set, get) => ({
   setSession: (sessionId, sessionName, playerId, playerName, isHost) => {
     set({ sessionId, sessionName, playerId, playerName, isHost });
     
-    // Connetti al socket e unisciti alla sessione
-    socketService.connect();
-    socketService.joinSession(sessionId, playerId, playerName);
-    
-    // Configura i listener per gli aggiornamenti
-    socketService.onSessionUpdate((data) => {
-      if (data.players) {
-        get().updatePlayers(data.players);
-      }
-    });
-    
-    socketService.onGameEnded(() => {
-      get().setGameEnded(true);
+    socketService.connect().then(() => {
+      socketService.onSessionUpdate((data) => {
+        if (data.players) {
+          get().updatePlayers(data.players);
+        }
+      });
+      socketService.onGameEnded(() => {
+        get().setGameEnded(true);
+      });
+      socketService.joinSession(sessionId, playerId, playerName);
     });
   },
   

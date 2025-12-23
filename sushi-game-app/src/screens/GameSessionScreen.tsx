@@ -53,6 +53,14 @@ const GameSessionScreen = () => {
     // Usa il playerId dal backend se disponibile, altrimenti genera uno nuovo
     const finalPlayerId = playerId || 'player-' + Date.now();
     setSession(sessionId, sessionName, finalPlayerId, playerName, isHost);
+    SessionStorageService.saveActiveSession({
+      sessionId,
+      sessionName,
+      playerId: finalPlayerId,
+      playerName,
+      isHost,
+      startedAt: new Date().toISOString()
+    });
   }, []);
 
   // Funzione per aggiungere un pezzo di sushi
@@ -296,6 +304,7 @@ const GameSessionScreen = () => {
             mode="contained" 
             onPress={() => {
               useGameStore.getState().resetGame();
+              SessionStorageService.clearActiveSession();
               navigation.navigate('Home' as never);
             }}
             style={styles.newGameButton}
@@ -362,6 +371,7 @@ const GameSessionScreen = () => {
                 onPress={() => {
                   setShowLeaderboardModal(false);
                   useGameStore.getState().resetGame();
+                  SessionStorageService.clearActiveSession();
                   navigation.navigate('Home' as never);
                 }}
                 style={styles.modalButton}
