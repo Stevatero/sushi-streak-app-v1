@@ -154,7 +154,8 @@ app.post('/api/sessions', async (req, res) => {
                 name: playerName,
                 score: 0,
                 finished: false
-              }]
+              }],
+              lastActivity: Date.now()
             };
 
             res.status(201).json({ 
@@ -173,18 +174,31 @@ app.post('/api/sessions', async (req, res) => {
 
 app.post('/api/sessions/join', (req, res) => {
   const { sessionId, playerName } = req.body;
-  const playerId = uuidv4();
+  const normalizedSessionId = String(sessionId || '').toUpperCase().trim();
+  const normalizedName = String(playerName || '').trim();
+  const newPlayerId = uuidv4();
+
+  // Validazione input
+  if (!normalizedSessionId || !normalizedName) {
+    return res.status(400).json({ error: 'sessionId e playerName sono richiesti' });
+  }
 
   // Verifica se la sessione esiste
-  db.get('SELECT * FROM sessions WHERE id = ?', [sessionId], (err, session) => {
+  db.get('SELECT * FROM sessions WHERE id = ?', [normalizedSessionId], (err, session) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!session) return res.status(404).json({ error: 'Sessione non trovata' });
 
-    // Verifica se sono passati più di 10 minuti dalla creazione della sessione
-    // Convertiamo entrambi i timestamp in UTC per evitare problemi di fuso orario
-    const sessionCreatedAt = new Date(session.created_at + 'Z'); // Forza interpretazione UTC
     const now = new Date();
-    const timeDifference = (now.getTime() - sessionCreatedAt.getTime()) / (1000 * 60); // differenza in minuti
+    const EXP_MIN = 10;
+    if (activeSessions[normalizedSessionId] && typeof activeSessions[normalizedSessionId].lastActivity === 'number') {
+      const diffMin = (Date.now() - activeSessions[normalizedSessionId].lastActivity) / (1000 * 60);
+      if (diffMin > EXP_MIN) {
+        return res.status(403).json({ error: 'Non è più possibile unirsi a questa sessione. Sono passati più di 10 minuti di inattività.' });
+      }
+    }
+    // Verifica se sono passati più di 10 minuti dalla creazione della sessione
+    const sessionCreatedAt = new Date(session.created_at + 'Z'); // Forza interpretazione UTC
+    const timeDifference = (now.getTime() - sessionCreatedAt.getTime()) / (1000 * 60);
 
     // Debug: log per capire il problema del timer
     console.log('Debug Timer:');
@@ -194,46 +208,62 @@ app.post('/api/sessions/join', (req, res) => {
     console.log('- Time difference (minutes):', timeDifference);
     console.log('- Is expired (>10 min)?:', timeDifference > 10);
 
-    if (timeDifference > 10) {
+    if (timeDifference > EXP_MIN) {
       return res.status(403).json({ error: 'Non è più possibile unirsi a questa sessione. Sono passati più di 10 minuti dalla sua creazione.' });
     }
 
-    db.run('INSERT INTO players (id, name, session_id) VALUES (?, ?, ?)', 
-      [playerId, playerName, sessionId], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
+    // Controlla se esiste già un giocatore con lo stesso nome (case-insensitive)
+    db.get('SELECT * FROM players WHERE session_id = ? AND LOWER(name) = LOWER(?)', [normalizedSessionId, normalizedName], (err, existingPlayer) => {
+      if (err) return res.status(500).json({ error: err.message });
 
-        // Aggiorna la sessione in memoria
-        if (activeSessions[sessionId]) {
-          activeSessions[sessionId].players.push({
-            id: playerId,
-            name: playerName,
-            score: 0,
-            finished: false
+      if (existingPlayer) {
+        // Blocca duplicati: il nome è già in uso nella sessione
+        return res.status(409).json({ error: 'Nome già in uso' });
+      }
+
+      // Nessun duplicato: inserisci nuovo giocatore
+      db.run('INSERT INTO players (id, name, session_id) VALUES (?, ?, ?)', 
+        [newPlayerId, normalizedName, normalizedSessionId], (err) => {
+          if (err) return res.status(500).json({ error: err.message });
+
+          // Aggiorna la sessione in memoria evitando duplicati di nome
+          if (activeSessions[normalizedSessionId]) {
+            const nameExists = activeSessions[normalizedSessionId].players.some(p => p.name.toLowerCase() === normalizedName.toLowerCase());
+            if (!nameExists) {
+              activeSessions[normalizedSessionId].players.push({
+                id: newPlayerId,
+                name: normalizedName,
+                score: 0,
+                finished: false
+              });
+            }
+            activeSessions[normalizedSessionId].lastActivity = Date.now();
+          } else {
+            // Carica i giocatori esistenti dal database
+            db.all('SELECT * FROM players WHERE session_id = ?', [normalizedSessionId], (err, players) => {
+              if (err) return res.status(500).json({ error: err.message });
+
+              activeSessions[normalizedSessionId] = {
+                id: normalizedSessionId,
+                name: session.name,
+                players: players.map(p => ({
+                  id: p.id,
+                  name: p.name,
+                  score: p.score,
+                  finished: p.finished === 1 || p.finished === true
+                })),
+                lastActivity: Date.now()
+              };
+            });
+          }
+
+          res.status(200).json({ 
+            sessionId: normalizedSessionId, 
+            playerId: newPlayerId,
+            sessionName: session.name
           });
-        } else {
-          // Carica i giocatori esistenti dal database
-          db.all('SELECT * FROM players WHERE session_id = ?', [sessionId], (err, players) => {
-            if (err) return res.status(500).json({ error: err.message });
-
-            activeSessions[sessionId] = {
-              id: sessionId,
-              name: session.name,
-              players: players.map(p => ({
-                id: p.id,
-                name: p.name,
-                score: p.score,
-                finished: p.finished === 1
-              }))
-            };
-          });
-        }
-
-        res.status(200).json({ 
-          sessionId, 
-          playerId,
-          sessionName: session.name
         });
-      });
+    });
   });
 });
 
@@ -273,11 +303,14 @@ io.on('connection', (socket) => {
     
     // Aggiungi il giocatore alla sessione se non esiste già
     if (activeSessions[sessionId]) {
-      // Verifica se il giocatore esiste già
+      // Verifica se il giocatore esiste già (per id o per nome)
       const playerExists = activeSessions[sessionId].players.some(p => p.id === playerId);
+      const nameExists = playerName 
+        ? activeSessions[sessionId].players.some(p => (p.name || '').toLowerCase() === playerName.toLowerCase())
+        : false;
       
       // Se il giocatore non esiste, aggiungilo
-      if (!playerExists && playerName) {
+      if (!playerExists && !nameExists && playerName) {
         activeSessions[sessionId].players.push({
           id: playerId,
           name: playerName,
@@ -289,6 +322,7 @@ io.on('connection', (socket) => {
         db.run('INSERT OR IGNORE INTO players (id, name, session_id) VALUES (?, ?, ?)', 
           [playerId, playerName, sessionId]);
       }
+      activeSessions[sessionId].lastActivity = Date.now();
       
       // Invia lo stato attuale della sessione a tutti i client nella stanza
       io.to(sessionId).emit('session_update', activeSessions[sessionId]);
@@ -309,6 +343,7 @@ io.on('connection', (socket) => {
       // Aggiorna il database
       db.run('UPDATE players SET score = ? WHERE id = ?', [player.score, playerId]);
 
+      activeSessions[sessionId].lastActivity = Date.now();
       // Notifica tutti i client nella stanza
       io.to(sessionId).emit('session_update', session);
     }
@@ -331,6 +366,7 @@ io.on('connection', (socket) => {
       // Verifica se tutti i giocatori hanno finito
       const allFinished = session.players.every(p => p.finished);
       
+      activeSessions[sessionId].lastActivity = Date.now();
       // Notifica tutti i client nella stanza
       io.to(sessionId).emit('session_update', session);
       
@@ -352,6 +388,21 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server in ascolto sulla porta ${PORT}`);
 });
 
+const EXP_MS = 10 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  Object.keys(activeSessions).forEach((sid) => {
+    const s = activeSessions[sid];
+    if (!s || typeof s.lastActivity !== 'number') return;
+    if (now - s.lastActivity > EXP_MS) {
+      db.run('DELETE FROM players WHERE session_id = ?', [sid], () => {
+        db.run('DELETE FROM sessions WHERE id = ?', [sid], () => {});
+      });
+      delete activeSessions[sid];
+    }
+  });
+}, 60000);
+
 // Endpoint per ottenere informazioni di una sessione per la condivisione
 app.get('/api/sessions/:sessionId/info', (req, res) => {
   const { sessionId } = req.params;
@@ -359,17 +410,20 @@ app.get('/api/sessions/:sessionId/info', (req, res) => {
   // Controlla prima nelle sessioni attive
   if (activeSessions[sessionId]) {
     const session = activeSessions[sessionId];
-    return res.json({
-      sessionId,
-      sessionName: session.name,
-      playersCount: session.players.length,
-      isActive: true,
-      players: session.players.map(p => ({
-        name: p.name,
-        score: p.score,
-        finished: p.finished
-      }))
-    });
+    const expired = typeof session.lastActivity === 'number' ? (Date.now() - session.lastActivity) > (10 * 60 * 1000) : false;
+    if (!expired) {
+      return res.json({
+        sessionId,
+        sessionName: session.name,
+        playersCount: session.players.length,
+        isActive: true,
+        players: session.players.map(p => ({
+          name: p.name,
+          score: p.score,
+          finished: p.finished
+        }))
+      });
+    }
   }
   
   // Se non è attiva, controlla nel database
@@ -412,13 +466,17 @@ app.get('/join/:sessionId', (req, res) => {
     return new Promise((resolve, reject) => {
       if (activeSessions[sessionId]) {
         const session = activeSessions[sessionId];
-        resolve({
-          sessionId,
-          sessionName: session.name,
-          playersCount: session.players.length,
-          isActive: true,
-          players: session.players
-        });
+        const expired = typeof session.lastActivity === 'number' ? (Date.now() - session.lastActivity) > (10 * 60 * 1000) : false;
+        if (!expired) {
+          resolve({
+            sessionId,
+            sessionName: session.name,
+            playersCount: session.players.length,
+            isActive: true,
+            players: session.players
+          });
+          return;
+        }
       } else {
         db.get('SELECT * FROM sessions WHERE id = ?', [sessionId], (err, session) => {
           if (err) return reject(err);
@@ -435,7 +493,22 @@ app.get('/join/:sessionId', (req, res) => {
             });
           });
         });
+        return;
       }
+      db.get('SELECT * FROM sessions WHERE id = ?', [sessionId], (err, session) => {
+        if (err) return reject(err);
+        if (!session) return reject(new Error('Sessione non trovata'));
+        db.all('SELECT * FROM players WHERE session_id = ?', [sessionId], (err, players) => {
+          if (err) return reject(err);
+          resolve({
+            sessionId,
+            sessionName: session.name,
+            playersCount: players.length,
+            isActive: false,
+            players
+          });
+        });
+      });
     });
   };
   
