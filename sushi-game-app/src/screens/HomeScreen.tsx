@@ -34,6 +34,7 @@ const HomeScreen = () => {
   const [error, setError] = useState('');
   const [expandedSection, setExpandedSection] = useState<'create' | 'join' | null>(null);
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
+  const [expiredSession, setExpiredSession] = useState<ActiveSession | null>(null);
 
   const theme = useTheme();
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -161,11 +162,14 @@ const HomeScreen = () => {
         const expired = (Date.now() - started) > (10 * 60 * 1000);
         if (info && info.isActive && !expired) {
           setActiveSession(saved);
+          setExpiredSession(null);
         } else {
           setActiveSession(null);
+          setExpiredSession(saved);
         }
       } else {
         setActiveSession(null);
+        setExpiredSession(null);
       }
     };
     checkActive();
@@ -368,6 +372,29 @@ const HomeScreen = () => {
                 icon="refresh"
               >
                 Riconnettiti
+              </Button>
+            </View>
+          ) : null}
+          
+          {expiredSession ? (
+            <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+              <Text style={[styles.cardTitle, { color: theme.colors.primary }]}>
+                Sessione scaduta
+              </Text>
+              <Text style={{ color: theme.colors.onSurface }}>
+                {expiredSession.sessionName || expiredSession.sessionId}
+              </Text>
+              <Button
+                mode="contained"
+                onPress={() => {
+                  setSessionName(expiredSession.sessionName || expiredSession.sessionId);
+                  setPlayerName(expiredSession.playerName);
+                  setExpandedSection('create');
+                }}
+                style={styles.button}
+                icon="plus"
+              >
+                Crea nuova sessione
               </Button>
             </View>
           ) : null}
