@@ -1,8 +1,8 @@
 import { io, Socket } from 'socket.io-client';
 import { Platform } from 'react-native';
+import { resolveServerUrl } from './networkConfig';
 
-// Indirizzo del server backend - Railway deployment
-const SOCKET_URL = 'http://57.131.31.119:3005';
+let SOCKET_URL = 'http://sushi.dietalab.net:3005';
 
 class SocketService {
   private socket: Socket | null = null;
@@ -10,8 +10,9 @@ class SocketService {
   private playerId: string | null = null;
 
   // Inizializza la connessione socket
-  connect() {
+  async connect() {
     if (!this.socket) {
+      SOCKET_URL = await resolveServerUrl();
       this.socket = io(SOCKET_URL, {
         transports: ['websocket'], // Forza WebSocket per evitare problemi di polling
         reconnectionAttempts: 5,

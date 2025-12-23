@@ -6,12 +6,12 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SettingsButton from '../components/SettingsButton';
 import shareService from '../services/shareService';
+import { resolveServerUrl } from '../services/networkConfig';
 import useGameStore from '../store/gameStore';
 import { useFonts, JotiOne_400Regular } from '@expo-google-fonts/joti-one';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 
-// URL del server - Railway deployment
-const SERVER_URL = 'http://57.131.31.119:3005';
+let SERVER_URL = 'http://sushi.dietalab.net:3005';
 type RootStackParamList = {
   Home: undefined;
   GameSession: {
@@ -144,6 +144,11 @@ const HomeScreen = () => {
     return () => {
       linkingListener.remove();
     };
+  }, []);
+  useEffect(() => {
+    (async () => {
+      SERVER_URL = await resolveServerUrl();
+    })();
   }, []);
   useEffect(() => {
     headerOpacity.value = withTiming(1, { duration: 600, easing: Easing.out(Easing.quad) });
