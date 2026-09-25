@@ -10,6 +10,10 @@ updates:
     groups:
       backend-minor-patch:
         update-types: [minor, patch]
+    ignore:
+      # Gli aggiornamenti major (es. Express 5, ESLint 10) si valutano e si fanno a mano
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
     labels: [dependencies, backend]
 
   # App: le versioni di Expo/React Native vanno aggiornate insieme con `npx expo install --fix`
@@ -38,6 +42,12 @@ updates:
       - dependency-name: 'jest'
       - dependency-name: 'jest-expo'
       - dependency-name: 'typescript'
+      - dependency-name: 'babel-preset-expo'
+      - dependency-name: 'eslint-config-expo'
+      - dependency-name: '@testing-library/react-native'
+      # Gli aggiornamenti major si valutano e si fanno a mano
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
     labels: [dependencies, app]
 
   - package-ecosystem: github-actions
