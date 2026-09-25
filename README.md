@@ -171,17 +171,18 @@ L'app usa il dev client di Expo: installa sul dispositivo una build `development
 
 ### Backend (`sushi-game-backend/.env.example`)
 
-| Variabile                | Default                               | Descrizione                                               |
-| ------------------------ | ------------------------------------- | --------------------------------------------------------- |
-| `PORT`                   | `3000`                                | Porta HTTP                                                |
-| `DB_PATH`                | `sushi_game.db` accanto a `server.js` | Database SQLite                                           |
-| `SESSION_INACTIVITY_MIN` | `180`                                 | Minuti di inattività prima della chiusura di una sessione |
-| `SESSION_RETENTION_DAYS` | `30`                                  | Giorni di conservazione delle sessioni chiuse             |
-| `CORS_ORIGINS`           | localhost + dominio pubblico          | Origini web ammesse                                       |
-| `TRUST_PROXY`            | `loopback`                            | Proxy fidati (nginx sulla stessa macchina)                |
-| `LOG_LEVEL`              | `info`                                | `debug` / `info` / `warn` / `error` / `silent`            |
-| `PRIVACY_CONTACT`        | issue GitHub                          | Contatto mostrato in `/privacy`                           |
-| `ANDROID_CERT_SHA256`    | —                                     | Impronte del certificato Play per gli App Links           |
+| Variabile                | Default                               | Descrizione                                                      |
+| ------------------------ | ------------------------------------- | ---------------------------------------------------------------- |
+| `PORT`                   | `3000`                                | Porta HTTP                                                       |
+| `HOST`                   | `0.0.0.0`                             | Interfaccia di ascolto (`127.0.0.1` in produzione, dietro nginx) |
+| `DB_PATH`                | `sushi_game.db` accanto a `server.js` | Database SQLite                                                  |
+| `SESSION_INACTIVITY_MIN` | `180`                                 | Minuti di inattività prima della chiusura di una sessione        |
+| `SESSION_RETENTION_DAYS` | `30`                                  | Giorni di conservazione delle sessioni chiuse                    |
+| `CORS_ORIGINS`           | localhost + dominio pubblico          | Origini web ammesse                                              |
+| `TRUST_PROXY`            | `loopback`                            | Proxy fidati (nginx sulla stessa macchina)                       |
+| `LOG_LEVEL`              | `info`                                | `debug` / `info` / `warn` / `error` / `silent`                   |
+| `PRIVACY_CONTACT`        | issue GitHub                          | Contatto mostrato in `/privacy`                                  |
+| `ANDROID_CERT_SHA256`    | —                                     | Impronte del certificato Play per gli App Links                  |
 
 Nessun secret è necessario per sviluppare: le credenziali di firma e pubblicazione sono gestite da EAS e GitHub Secrets.
 

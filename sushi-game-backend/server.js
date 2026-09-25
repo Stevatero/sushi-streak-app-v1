@@ -20,6 +20,8 @@ const DEFAULT_CORS_ORIGINS = [
 
 const DEFAULT_CONFIG = {
   port: Number(process.env.PORT) || 3000,
+  // Interfaccia di ascolto: in produzione 127.0.0.1, così il server è raggiungibile solo tramite nginx
+  host: process.env.HOST || '0.0.0.0',
   dbPath: process.env.DB_PATH || path.join(__dirname, 'sushi_game.db'),
   // Dopo quanto tempo senza attività una sessione viene chiusa (default 3 ore)
   inactivityMs: (Number(process.env.SESSION_INACTIVITY_MIN) || 180) * 60 * 1000,
@@ -644,7 +646,7 @@ function createServer(options = {}) {
   async function start(port = config.port) {
     await migrate(db);
     sweepTimer = setInterval(() => sweep().catch(logDbError('sweep')), config.sweepIntervalMs);
-    await new Promise((resolve) => server.listen(port, '0.0.0.0', resolve));
+    await new Promise((resolve) => server.listen(port, config.host, resolve));
     return server.address().port;
   }
 
