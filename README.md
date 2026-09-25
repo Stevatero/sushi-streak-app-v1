@@ -1,243 +1,250 @@
-# 🍣 Sushi Streak App
+<p align="center">
+  <img src="docs/play-store/play-store-icon-512.png" alt="Sushi Streak" width="120" height="120">
+</p>
 
-Un'applicazione mobile cross-platform che permette a gruppi di amici di tenere traccia di chi mangia più sushi durante una cena. Sfida i tuoi amici e scopri chi è il vero campione di sushi!
+<h1 align="center">Sushi Streak</h1>
 
-[![React Native](https://img.shields.io/badge/React%20Native-0.72-blue.svg)](https://reactnative.dev/)
-[![Expo](https://img.shields.io/badge/Expo-49.0-black.svg)](https://expo.dev/)
-[![Node.js](https://img.shields.io/badge/Node.js-18.0-green.svg)](https://nodejs.org/)
-[![Railway](https://img.shields.io/badge/Deployed%20on-Railway-blueviolet.svg)](https://railway.app/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<p align="center">
+  Sfida i tuoi amici e scopri chi è il vero campione di sushi.<br>
+  Un'app Android per contare in tempo reale i pezzi mangiati durante una cena all-you-can-eat.
+</p>
 
-## 🌐 App Live
-
-- **Backend API**: [http://sushi.dietalab.net](http://sushi.dietalab.net)
-- **Status**: ✅ Online e funzionante
-- **Piattaforme supportate**: iOS, Android, Web
-
-## 📱 Screenshot e Demo
-
-L'app presenta un'interfaccia moderna con tema chiaro/scuro, animazioni fluide e un design intuitivo che rende divertente tenere traccia dei pezzi di sushi consumati durante le cene con gli amici.
-
-## 🚀 Funzionalità
-
-### 🎮 Gestione Sessioni
-- **Creazione sessioni**: Crea una nuova sessione di gioco con un codice univoco
-- **Partecipazione**: Unisciti a una sessione esistente tramite codice
-- **Gestione giocatori**: Aggiungi e rimuovi giocatori dinamicamente
-
-### 📊 Punteggio e Classifica
-- **Contatore real-time**: Tieni traccia dei pezzi di sushi per ogni giocatore
-- **Classifica live**: Visualizza la classifica aggiornata in tempo reale
-- **Statistiche**: Visualizza statistiche dettagliate per ogni giocatore
-
-### 🎉 Esperienza di Gioco
-- **Animazioni**: Animazioni fluide per ogni azione
-- **Suoni**: Effetti sonori per un'esperienza coinvolgente
-- **Tema personalizzabile**: Supporto per tema chiaro e scuro
-- **Fine partita**: Celebrazioni con fuochi d'artificio per il vincitore
-
-### 📱 Interfaccia Utente
-- **Design moderno**: Interfaccia pulita e intuitiva
-- **Responsive**: Ottimizzata per tutti i dispositivi
-- **Accessibilità**: Supporto per screen reader e navigazione assistita
-
-## 🛠️ Tecnologie utilizzate
-
-### Frontend (React Native + Expo)
-- **React Native 0.72**: Framework per lo sviluppo mobile cross-platform
-- **Expo 49**: Piattaforma per lo sviluppo e deployment
-- **React Navigation 6**: Navigazione tra schermate
-- **React Native Paper**: Libreria di componenti Material Design
-- **Zustand**: Gestione dello stato leggera e performante
-- **React Native Reanimated 3**: Animazioni fluide e performanti
-- **Expo Google Fonts**: Font personalizzati (Joti One per il titolo)
-- **Socket.IO Client**: Comunicazione real-time con il backend
-
-### Backend (Node.js)
-- **Node.js 18+**: Runtime JavaScript server-side
-- **Express.js**: Framework web minimalista
-- **Socket.IO**: Comunicazione bidirezionale real-time
-- **SQLite**: Database leggero per la persistenza dei dati
-- **CORS**: Gestione delle richieste cross-origin
-
-### Strumenti di Sviluppo
-- **TypeScript**: Tipizzazione statica per JavaScript
-- **ESLint**: Linting del codice
-- **Prettier**: Formattazione automatica del codice
-
-## 📁 Struttura del progetto
-
-```
-Sushi-v1/
-├── 📱 sushi-game-app/              # Frontend React Native
-│   ├── 📂 src/
-│   │   ├── 🧩 components/          # Componenti riutilizzabili
-│   │   │   ├── PlayerCard.tsx      # Card per visualizzare i giocatori
-│   │   │   ├── SushiAnimation.tsx  # Animazioni sushi
-│   │   │   └── ThemeToggle.tsx     # Toggle tema chiaro/scuro
-│   │   ├── 🧭 navigation/          # Configurazione navigazione
-│   │   │   └── AppNavigator.tsx    # Stack navigator principale
-│   │   ├── 📱 screens/             # Schermate dell'app
-│   │   │   ├── HomeScreen.tsx      # Schermata principale
-│   │   │   ├── GameScreen.tsx      # Schermata di gioco
-│   │   │   ├── SessionHistoryScreen.tsx # Storico sessioni
-│   │   │   └── SettingsScreen.tsx  # Impostazioni
-│   │   ├── 🔌 services/            # Servizi esterni
-│   │   │   └── socketService.ts    # Gestione Socket.IO
-│   │   ├── 🗃️ store/               # Gestione stato globale
-│   │   │   └── gameStore.ts        # Store Zustand per il gioco
-│   │   ├── 🎨 theme/               # Configurazione tema
-│   │   │   └── theme.ts            # Definizione colori e stili
-│   │   └── 🛠️ utils/               # Utilità e helper
-│   │       └── helpers.ts          # Funzioni di supporto
-│   ├── 📦 assets/                  # Risorse statiche
-│   │   ├── icon.png               # Icona dell'app
-│   │   └── sounds/                # Effetti sonori
-│   ├── App.tsx                    # Componente root
-│   ├── app.json                   # Configurazione Expo
-│   └── package.json               # Dipendenze frontend
-│
-└── 🖥️ sushi-game-backend/          # Backend Node.js
-    ├── server.js                  # Server Express e Socket.IO
-    ├── sushi_game.db             # Database SQLite
-    └── package.json              # Dipendenze backend
-```
-
-## 🚀 Come iniziare
-
-### 📋 Prerequisiti
-- **Node.js** (v18 o superiore) - [Download](https://nodejs.org/)
-- **npm** o **yarn** - Gestore di pacchetti
-- **Expo CLI** - `npm install -g @expo/cli`
-- **EAS CLI** - `npm install -g eas-cli` (per build e deploy)
-- **Git** - Per il controllo versione
-
-### ⚡ Installazione Rapida
-
-1. **Clona il repository**
-```bash
-git clone https://github.com/Stevatero/sushi-streak-app-v1.git
-cd sushi-streak-app-v1
-```
-
-2. **Installa le dipendenze del Frontend**
-```bash
-cd sushi-game-app
-npm install
-```
-
-3. **Avvia l'app in modalità sviluppo**
-```bash
-npx expo start
-```
-
-4. **Testa l'app**
-- **iOS**: Usa l'app Expo Go dall'App Store
-- **Android**: Usa l'app Expo Go dal Play Store
-- **Web**: Premi `w` nel terminale Expo
-- **Emulatore**: Premi `i` per iOS o `a` per Android
-
-### 🌐 Backend (Già Deployato)
-
-Il backend è già deployato e funzionante su Railway:
-- **URL**: https://sushi-streak-production.up.railway.app
-- **Status**: ✅ Online 24/7
-- **Database**: SQLite persistente
-
-Non è necessario avviare il backend localmente per testare l'app.
-
-### 🔧 Configurazione Avanzata
-
-#### Build per Produzione
-```bash
-# Login EAS
-eas login
-
-# Build per Android
-eas build --platform android
-
-# Build per iOS
-eas build --platform ios
-
-# Build per entrambe le piattaforme
-eas build --platform all
-```
-
-#### Deploy Backend (Opzionale)
-Se vuoi deployare il tuo backend:
-```bash
-cd sushi-game-backend
-npm install -g @railway/cli
-railway login
-railway init
-railway up
-```
-
-## ✅ Funzionalità implementate
-
-- [x] **Gestione Sessioni**: Creazione e partecipazione a sessioni di gioco
-- [x] **Conteggio Real-time**: Conteggio pezzi di sushi in tempo reale
-- [x] **Classifica Live**: Classifica aggiornata in tempo reale via Socket.IO
-- [x] **Fine Partita**: Segnalazione fine pasto con celebrazioni
-- [x] **Animazioni**: Animazioni di sushi e fuochi d'artificio
-- [x] **Temi**: Supporto per tema chiaro e scuro
-- [x] **UI Moderna**: Interfaccia utente moderna e reattiva
-- [x] **Font Personalizzati**: Integrazione Google Fonts (Joti One)
-- [x] **Suoni**: Effetti sonori per le azioni di gioco
-- [x] **Storico**: Visualizzazione storico delle sessioni passate
-- [x] **Impostazioni**: Pannello impostazioni con preferenze utente
-- [x] **Backend Cloud**: Deploy su Railway con database persistente
-- [x] **Build Production**: Configurazione EAS per build iOS/Android
-- [x] **Cross-Platform**: Supporto completo iOS, Android e Web
-
-## 🏗️ Architettura e Deploy
-
-### Frontend
-- **Piattaforma**: Expo (React Native)
-- **Build**: EAS Build per produzione
-- **Distribuzione**: App Store, Google Play, Web
-
-### Backend
-- **Hosting**: Railway (https://sushi-streak-production.up.railway.app)
-- **Database**: SQLite persistente
-- **Real-time**: Socket.IO per comunicazione bidirezionale
-- **Uptime**: 99.9% garantito
-
-## 🤝 Contribuire
-
-Contributi, issues e feature requests sono benvenuti! Sentiti libero di controllare la [pagina issues](https://github.com/Stevatero/sushi-streak-app-v1/issues).
-
-### Come Contribuire
-1. Fai un Fork del progetto
-2. Crea un branch per la tua feature (`git checkout -b feature/AmazingFeature`)
-3. Committa le tue modifiche (`git commit -m 'Add some AmazingFeature'`)
-4. Pusha sul branch (`git push origin feature/AmazingFeature`)
-5. Apri una Pull Request
-
-## 📝 Roadmap
-
-- [ ] **Modalità Torneo**: Sistema di tornei con più sessioni
-- [ ] **Statistiche Avanzate**: Grafici e analytics dettagliati
-- [ ] **Social Features**: Condivisione risultati sui social
-- [ ] **Notifiche Push**: Notifiche per inviti e aggiornamenti
-- [ ] **Modalità Offline**: Gioco senza connessione internet
-- [ ] **Personalizzazione**: Avatar e temi personalizzati
-- [ ] **Leaderboard Globale**: Classifica mondiale dei giocatori
-
-## 📄 Licenza
-
-Questo progetto è sotto licenza MIT - vedi il file [LICENSE](LICENSE) per i dettagli.
-
-## 👨‍💻 Autore
-
-**Stevatero** - [GitHub](https://github.com/Stevatero)
-
-## 🙏 Ringraziamenti
-
-- Grazie alla community di React Native ed Expo
-- Ispirato dalle serate sushi con gli amici
-- Font Joti One by Google Fonts
+<p align="center">
+  <a href="https://github.com/Stevatero/sushi-streak-game/actions/workflows/ci.yml"><img src="https://github.com/Stevatero/sushi-streak-game/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Stevatero/sushi-streak-game/releases"><img src="https://img.shields.io/github/v/release/Stevatero/sushi-streak-game?include_prereleases&label=release" alt="Release"></a>
+  <img src="https://img.shields.io/badge/Expo_SDK-54-000020?logo=expo" alt="Expo SDK 54">
+  <img src="https://img.shields.io/badge/Android-API_24%E2%80%9336-3DDC84?logo=android&logoColor=white" alt="Android API 24-36">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
+</p>
 
 ---
 
-⭐ Se questo progetto ti è piaciuto, lascia una stella su GitHub!
+## Indice
+
+- [Funzionalità](#funzionalità)
+- [Come si gioca](#come-si-gioca)
+- [Stack tecnologico](#stack-tecnologico)
+- [Architettura](#architettura)
+- [Struttura del progetto](#struttura-del-progetto)
+- [Requisiti](#requisiti)
+- [Sviluppo locale](#sviluppo-locale)
+- [Configurazione](#configurazione)
+- [Qualità: test, lint e formattazione](#qualità-test-lint-e-formattazione)
+- [Build e release Android](#build-e-release-android)
+- [CI/CD](#cicd)
+- [Sicurezza e privacy](#sicurezza-e-privacy)
+- [Roadmap](#roadmap)
+- [Licenza e crediti](#licenza-e-crediti)
+
+## Funzionalità
+
+**Partite multigiocatore in tempo reale**
+
+- Crea una sessione con un codice (generato o personalizzato) e invita gli amici con codice o link (`https://sushi.dietalab.net/join/CODICE`).
+- Classifica condivisa aggiornata in tempo reale via WebSocket, con la tua posizione evidenziata.
+- "Aggiungi pezzo" con animazione, suono e pila di sushi con fisica (Matter.js); "Annulla ultimo" per correggere un tocco accidentale.
+- "Ho finito!" (con conferma): la partita termina quando tutti hanno finito, con classifica finale e fuochi d'artificio per chi vince.
+
+**Affidabilità**
+
+- Riconnessione automatica dopo cadute di rete o il ritorno dall'app in background, con indicatore dello stato di connessione.
+- Partita riprendibile dalla Home anche dopo la chiusura forzata dell'app o un riavvio del server.
+- Le sessioni restano attive fino a 3 ore senza attività (configurabile).
+
+**Storico e preferenze**
+
+- Salvataggio automatico delle partite sul dispositivo, con durata e nome del ristorante facoltativo.
+- Tema sistema/chiaro/scuro e suoni attivabili, con preferenze salvate.
+- Cancellazione dei dati locali e informativa privacy dalle Impostazioni.
+
+L'app non richiede registrazione e non contiene pubblicità, analytics o tracciamento.
+
+## Come si gioca
+
+1. Un giocatore crea la sessione e condivide il codice o il link.
+2. Gli altri si uniscono inserendo il codice e il proprio nome.
+3. Ognuno tocca **Aggiungi pezzo** per ogni pezzo mangiato: la classifica si aggiorna per tutti.
+4. Quando hai finito tocca **Ho finito!**; quando tutti hanno finito viene proclamato il vincitore.
+
+## Stack tecnologico
+
+| Componente       | Tecnologie                                                                             |
+| ---------------- | -------------------------------------------------------------------------------------- |
+| App              | Expo SDK 54, React Native 0.81 (New Architecture, Hermes), React 19, TypeScript strict |
+| UI e navigazione | React Native Paper (Material 3), React Navigation 7 (native stack), Reanimated 4       |
+| Stato e dati     | Zustand, AsyncStorage, Socket.IO client                                                |
+| Gioco            | Matter.js (fisica della pila di sushi), expo-audio                                     |
+| Backend          | Node.js ≥ 20, Express 4, Socket.IO 4, SQLite (`sqlite3`), Helmet                       |
+| Qualità          | Jest + Testing Library, node:test, ESLint, Prettier, TypeScript                        |
+| Delivery         | EAS Build/Submit, GitHub Actions, Dependabot, PM2 + nginx                              |
+
+## Architettura
+
+```
+┌──────────────────────────── App (Expo / React Native) ────────────────────────────┐
+│ Screens (Home, Partita, Storico, Impostazioni)                                    │
+│   │                                                                              │
+│   ├── gameStore (Zustand) ◀── socketService ── riconnessione, rejoin, ack/timeout │
+│   ├── api (REST, timeout, errori tipizzati)                                       │
+│   └── sessionStorage / preferences (AsyncStorage, dati validati)                  │
+└───────────────┬───────────────────────────────────────────────┬───────────────────┘
+                │ HTTPS  POST /api/sessions, /join, GET /info   │ WSS  join_session, add_piece,
+                ▼                                               ▼      remove_piece, player_finished
+┌──────────────────────────── Backend (Node.js) ────────────────────────────────────┐
+│ Express (validazione, rate limit, Helmet/CSP) · Socket.IO (auth con token)        │
+│ Stato partite in memoria + persistenza SQLite · chiusura e pulizia automatiche     │
+│ Pagine web: /join/:codice (invito), /privacy · /api/health                         │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- Il server è la fonte di verità della partita; il client applica gli snapshot ricevuti.
+- Ogni giocatore riceve `playerId` + `playerToken` alla creazione/ingresso: il socket si autentica con questi e le azioni valgono solo per il giocatore autenticato.
+- Le sessioni attive sono in memoria per la latenza e su SQLite per la persistenza; dopo un riavvio vengono ricaricate dal database.
+
+## Struttura del progetto
+
+```
+sushi-streak-game/
+├── sushi-game-app/            App Expo (Android)
+│   ├── App.tsx                Provider, error boundary, splash
+│   ├── app.config.ts          Configurazione Expo per ambiente (APP_VARIANT)
+│   ├── eas.json               Profili di build EAS
+│   ├── assets/                Icone, splash, suoni, immagini del sushi
+│   └── src/
+│       ├── components/        SushiStack, Fireworks, ErrorBoundary, ...
+│       ├── navigation/        Stack e tipi delle rotte
+│       ├── screens/           Home, GameSession, SessionHistory, Settings
+│       ├── services/          api, socketService, sessionStorage, preferences, shareService
+│       ├── store/             gameStore (Zustand)
+│       ├── theme/             Temi chiaro/scuro e provider
+│       └── utils/             logger, sessionCode, SoundManager
+├── sushi-game-backend/        Server Node.js
+│   ├── server.js              API REST, Socket.IO, manutenzione sessioni
+│   ├── db.js                  Schema e migrazioni SQLite
+│   ├── joinPage.js            Pagina web di invito
+│   ├── privacyPage.js         Informativa privacy (/privacy)
+│   ├── logger.js              Log strutturati JSON
+│   ├── scripts/backup.js      Backup consistente del database
+│   └── test/                  Test di integrazione (node:test)
+├── docs/                      Release, deploy, privacy / Data Safety, asset Play Store
+├── .github/                   CI, release, Dependabot, template
+└── start.ps1                  Avvio locale di backend e app (Windows)
+```
+
+## Requisiti
+
+- Node.js **22 LTS** (minimo 20.19 per l'app, 20.17 per il backend) e npm
+- Per provare l'app: un dispositivo Android con la build di sviluppo installata, oppure un emulatore Android
+- Per le build: account [Expo](https://expo.dev) con accesso al progetto EAS; per build locali, Android Studio (JDK 17+ e Android SDK 36)
+
+## Sviluppo locale
+
+```bash
+git clone https://github.com/Stevatero/sushi-streak-game.git
+cd sushi-streak-game
+
+# Backend
+cd sushi-game-backend
+npm ci
+npm run dev            # http://localhost:3000
+
+# App (in un altro terminale)
+cd ../sushi-game-app
+npm ci
+cp .env.example .env   # imposta EXPO_PUBLIC_API_URL=http://<IP-del-PC>:3000
+npm start
+```
+
+Su Windows `.\start.ps1` avvia backend e app insieme e configura automaticamente l'IP locale (`.\start.ps1 -Production` per usare il backend di produzione).
+
+L'app usa il dev client di Expo: installa sul dispositivo una build `development` (`npm run build:dev`) e aprila scansionando il QR code mostrato da `npm start`.
+
+## Configurazione
+
+### App (`sushi-game-app/.env`, vedi `.env.example`)
+
+| Variabile                | Default                      | Descrizione                                                                         |
+| ------------------------ | ---------------------------- | ----------------------------------------------------------------------------------- |
+| `EXPO_PUBLIC_API_URL`    | `https://sushi.dietalab.net` | Backend usato dall'app                                                              |
+| `EXPO_PUBLIC_PUBLIC_URL` | `https://sushi.dietalab.net` | Dominio dei link di invito e dell'informativa                                       |
+| `APP_VARIANT`            | `production`                 | `development` / `preview` / `production`: nome, application ID e deep link dell'app |
+
+### Backend (`sushi-game-backend/.env.example`)
+
+| Variabile                | Default                               | Descrizione                                               |
+| ------------------------ | ------------------------------------- | --------------------------------------------------------- |
+| `PORT`                   | `3000`                                | Porta HTTP                                                |
+| `DB_PATH`                | `sushi_game.db` accanto a `server.js` | Database SQLite                                           |
+| `SESSION_INACTIVITY_MIN` | `180`                                 | Minuti di inattività prima della chiusura di una sessione |
+| `SESSION_RETENTION_DAYS` | `30`                                  | Giorni di conservazione delle sessioni chiuse             |
+| `CORS_ORIGINS`           | localhost + dominio pubblico          | Origini web ammesse                                       |
+| `TRUST_PROXY`            | `loopback`                            | Proxy fidati (nginx sulla stessa macchina)                |
+| `LOG_LEVEL`              | `info`                                | `debug` / `info` / `warn` / `error` / `silent`            |
+| `PRIVACY_CONTACT`        | issue GitHub                          | Contatto mostrato in `/privacy`                           |
+| `ANDROID_CERT_SHA256`    | —                                     | Impronte del certificato Play per gli App Links           |
+
+Nessun secret è necessario per sviluppare: le credenziali di firma e pubblicazione sono gestite da EAS e GitHub Secrets.
+
+## Qualità: test, lint e formattazione
+
+```bash
+# App
+cd sushi-game-app
+npm run check          # lint + typecheck + formattazione + test
+npm run test:ci        # test con coverage
+
+# Backend
+cd sushi-game-backend
+npm run lint && npm run format:check && npm test
+```
+
+I test coprono le parti a maggior rischio di regressione:
+
+- **App**: validazione dei codici e deep link, client API, riconnessione e rejoin del socket, store di gioco, storage con dati corrotti o legacy, error boundary, flussi Home (creazione/ingresso) e Partita (pezzi online/offline, conferma di fine, salvataggio automatico).
+- **Backend**: autenticazione con token, robustezza agli eventi malformati, fine partita, ricarica dopo riavvio, XSS e CSP delle pagine web, health check, backup.
+
+## Build e release Android
+
+| Comando (`sushi-game-app`)  | Risultato                                                    |
+| --------------------------- | ------------------------------------------------------------ |
+| `npm run build:dev`         | Dev client (`com.stevatero.sushistreakapp.dev`)              |
+| `npm run build:preview`     | APK interno di test (`com.stevatero.sushistreakapp.preview`) |
+| `npm run build:production`  | **AAB** firmato per il Play Store                            |
+| `npm run submit:production` | Invio dell'ultimo AAB alla traccia interna di Google Play    |
+
+Configurazione Android: `targetSdk`/`compileSdk` 36, `minSdk` 24, R8 e riduzione delle risorse, backup disabilitato, permessi minimi, App Links verificati su `sushi.dietalab.net/join`.
+
+Il versioning segue SemVer: `versionName` = versione in `sushi-game-app/package.json`, `versionCode` incrementato da EAS. Ogni rilascio ha un tag `vX.Y.Z` e una GitHub Release; la release marcata _Latest_ corrisponde alla versione in produzione sul Play Store.
+
+Procedura completa e checklist Play Store: **[docs/RELEASING.md](docs/RELEASING.md)**. Deploy del backend, monitoraggio e backup: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+
+## CI/CD
+
+| Workflow                                 | Quando                       | Cosa fa                                                                                                                                                                                         |
+| ---------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [CI](.github/workflows/ci.yml)           | Push su `main`, pull request | Backend (Node 20 e 22): lint, formattazione, test, audit. App: lint, typecheck, formattazione, test con coverage, expo-doctor, build del bundle Android, audit. Scansione secrets con gitleaks. |
+| [Release](.github/workflows/release.yml) | Tag `vX.Y.Z`                 | Verifica versione e CHANGELOG, crea la GitHub Release e, con `EXPO_TOKEN` configurato, avvia la build AAB su EAS (submit opzionale).                                                            |
+| [Dependabot](.github/dependabot.yml)     | Settimanale                  | Aggiornamenti raggruppati di dipendenze e GitHub Actions (Expo/React Native esclusi: si aggiornano con l'SDK).                                                                                  |
+
+## Sicurezza e privacy
+
+- Comunicazione solo HTTPS/WSS; token dei giocatori conservati come hash sul server; validazione degli input e rate limiting; Helmet e CSP con nonce.
+- Nessun account, nessun analytics o SDK pubblicitario; i dati delle partite vengono cancellati automaticamente dopo 30 giorni dalla chiusura.
+- Informativa: [sushi.dietalab.net/privacy](https://sushi.dietalab.net/privacy) · Inventario dei dati e questionario Data Safety: [docs/DATA_SAFETY.md](docs/DATA_SAFETY.md).
+- Segnalazione di vulnerabilità: [SECURITY.md](SECURITY.md).
+
+## Roadmap
+
+- [ ] Aggiornamento a Expo SDK 57 (risolve gli advisory residui delle dipendenze di build)
+- [ ] Prima pubblicazione su Google Play (traccia interna → chiusa → produzione)
+- [ ] Crash reporting opt-in (es. Sentry) tramite l'hook già presente in `src/utils/logger.ts`
+- [ ] Localizzazione in inglese
+- [ ] Supporto iOS (configurazione già presente, non ancora testata né pubblicata)
+
+## Licenza e crediti
+
+Distribuito con licenza [MIT](LICENSE). Sviluppato da **Dario Stevanato** ([@Stevatero](https://github.com/Stevatero)).
+
+Font [Joti One](https://fonts.google.com/specimen/Joti+One) (SIL Open Font License) tramite `@expo-google-fonts`.
+
+Contributi benvenuti: vedi [CONTRIBUTING.md](CONTRIBUTING.md) e il [CHANGELOG](CHANGELOG.md).

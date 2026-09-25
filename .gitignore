@@ -1,67 +1,80 @@
-# Dependencies
+# ─── Dipendenze ────────────────────────────────────────────────────────────
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+.pnp.*
+.yarn/
 
-# Expo
+# ─── Expo / React Native ───────────────────────────────────────────────────
 .expo/
+.expo-shared/
 dist/
 web-build/
-
-# Native
+expo-env.d.ts
+.metro-health-check*
+# Cartelle native generate da `expo prebuild` (Continuous Native Generation)
+sushi-game-app/android/
+sushi-game-app/ios/
+.kotlin/
 *.orig.*
+
+# ─── Artefatti di build e firma (MAI versionare) ──────────────────────────
+*.apk
+*.aab
+*.ipa
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
-*.mobileprovision
-
-# Metro
-.metro-health-check*
-
-# Debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
-.DS_Store
 *.pem
+*.mobileprovision
+google-services.json
+GoogleService-Info.plist
+*service-account*.json
+credentials.json
 
-# Local env files
-.env*.local
+# ─── Ambiente e secrets ────────────────────────────────────────────────────
 .env
+.env.*
+!.env.example
 
-# Typescript
+# ─── Database e backup ─────────────────────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+sushi-game-backend/backups/
+
+# ─── Log, report e coverage ────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+coverage/
+*.lcov
 *.tsbuildinfo
 
-# IDE
-.vscode/
+# ─── Runtime ───────────────────────────────────────────────────────────────
+pids/
+*.pid
+*.pid.lock
+*.seed
+
+# ─── Editor e sistema operativo ────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# Logs
-logs
-*.log
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage directory used by tools like istanbul
-coverage/
-*.lcov
-
-# OS generated files
+*~
+.DS_Store
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# ─── File temporanei ───────────────────────────────────────────────────────
+*.tmp
+*.bak
+*.orig
+tmp/

@@ -1,0 +1,112 @@
+name: Release
+
+# Si avvia con il push di un tag vX.Y.Z (es. v1.2.0).
+# 1. Verifica che il tag corrisponda alla versione in sushi-game-app/package.json
+# 2. Crea la GitHub Release con le note della sezione corrispondente del CHANGELOG
+# 3. Se il secret EXPO_TOKEN è configurato, avvia la build Android di produzione (AAB) su EAS
+#    e, se richiesto manualmente, l'invio al Google Play (traccia interna, bozza)
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag esistente da rilasciare (es. v1.2.0)'
+        required: true
+      submit:
+        description: 'Invia la build al Google Play (traccia interna)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  github-release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - name: Verifica versione
+        run: |
+          VERSION="${TAG#v}"
+          APP_VERSION=$(node -p "require('./sushi-game-app/package.json').version")
+          if [ "$VERSION" != "$APP_VERSION" ]; then
+            echo "::error::Il tag $TAG non corrisponde alla versione dell'app ($APP_VERSION)"
+            exit 1
+          fi
+          grep -q "^## \[$VERSION\]" CHANGELOG.md || { echo "::error::Manca la sezione [$VERSION] nel CHANGELOG"; exit 1; }
+      - name: Estrai note di rilascio
+        run: |
+          VERSION="${TAG#v}"
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { found=1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          echo "" >> release-notes.md
+          echo "_Stato Google Play: non ancora pubblicata in produzione (vedi docs/RELEASING.md)._" >> release-notes.md
+      - name: Crea o aggiorna la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Le release restano "pre-release" finché la versione non è pubblicata in produzione sul Play Store
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file release-notes.md
+          else
+            gh release create "$TAG" --title "Sushi Streak $TAG" --notes-file release-notes.md --prerelease --verify-tag
+          fi
+
+  android-build:
+    name: Build Android (EAS)
+    needs: github-release
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: sushi-game-app
+    steps:
+      - name: Verifica credenziali EAS
+        id: check
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        working-directory: .
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice::EXPO_TOKEN non configurato: build Android saltata (vedi docs/RELEASING.md)"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.check.outputs.enabled == 'true'
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v7
+        if: steps.check.outputs.enabled == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sushi-game-app/package-lock.json
+      - if: steps.check.outputs.enabled == 'true'
+        run: npm ci
+      - name: Build AAB di produzione
+        if: steps.check.outputs.enabled == 'true'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx --yes eas-cli@latest build --platform android --profile production --non-interactive --no-wait
+      - name: Invio a Google Play (traccia interna)
+        if: steps.check.outputs.enabled == 'true' && github.event.inputs.submit == 'true'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx --yes eas-cli@latest submit --platform android --profile production --latest --non-interactive

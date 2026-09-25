@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withTiming, 
-  withSequence, 
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+  withSequence,
   withDelay,
   withSpring,
   withRepeat,
-  Easing
+  Easing,
 } from 'react-native-reanimated';
 
 const { width, height } = Dimensions.get('window');
@@ -37,7 +37,7 @@ const Firework: React.FC<FireworkProps> = ({ x, y, color, delay, size, moveX, mo
       withSequence(
         withSpring(1.2, { damping: 8, stiffness: 100 }),
         withTiming(2, { duration: 2000, easing: Easing.out(Easing.quad) }), // Aumentato da 1000 a 2000ms
-        withTiming(0, { duration: 1200, easing: Easing.in(Easing.quad) })   // Aumentato da 600 a 1200ms
+        withTiming(0, { duration: 1200, easing: Easing.in(Easing.quad) }) // Aumentato da 600 a 1200ms
       )
     );
 
@@ -45,9 +45,9 @@ const Firework: React.FC<FireworkProps> = ({ x, y, color, delay, size, moveX, mo
     opacity.value = withDelay(
       delay,
       withSequence(
-        withTiming(1, { duration: 500 }),     // Aumentato da 300 a 500ms
-        withTiming(0.8, { duration: 2000 }),  // Aumentato da 1000 a 2000ms
-        withTiming(0, { duration: 1200 })     // Aumentato da 600 a 1200ms
+        withTiming(1, { duration: 500 }), // Aumentato da 300 a 500ms
+        withTiming(0.8, { duration: 2000 }), // Aumentato da 1000 a 2000ms
+        withTiming(0, { duration: 1200 }) // Aumentato da 600 a 1200ms
       )
     );
 
@@ -71,7 +71,7 @@ const Firework: React.FC<FireworkProps> = ({ x, y, color, delay, size, moveX, mo
         false
       )
     );
-  }, []);
+  }, [delay, moveX, moveY, opacity, rotation, scale, translateX, translateY]);
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -79,7 +79,7 @@ const Firework: React.FC<FireworkProps> = ({ x, y, color, delay, size, moveX, mo
         { scale: scale.value },
         { translateX: translateX.value },
         { translateY: translateY.value },
-        { rotate: `${rotation.value}deg` }
+        { rotate: `${rotation.value}deg` },
       ],
       opacity: opacity.value,
     };
@@ -90,12 +90,12 @@ const Firework: React.FC<FireworkProps> = ({ x, y, color, delay, size, moveX, mo
       style={[
         {
           position: 'absolute',
-          left: x, 
-          top: y, 
+          left: x,
+          top: y,
           backgroundColor: color,
           width: size,
           height: size,
-          borderRadius: size / 2
+          borderRadius: size / 2,
         },
         animatedStyle,
       ]}
@@ -113,20 +113,36 @@ const Fireworks: React.FC<FireworksProps> = ({ isVisible }) => {
   useEffect(() => {
     if (isVisible) {
       const newFireworks = [];
-      const colors = ['#FF6B6B', '#4ECDC4', '#FFD166', '#06D6A0', '#118AB2', '#FF9F43', '#EE5A24', '#0984e3', '#FF8A65', '#fd79a8', '#a29bfe', '#6c5ce7', '#00b894', '#00cec9', '#e17055'];
-      
+      const colors = [
+        '#FF6B6B',
+        '#4ECDC4',
+        '#FFD166',
+        '#06D6A0',
+        '#118AB2',
+        '#FF9F43',
+        '#EE5A24',
+        '#0984e3',
+        '#FF8A65',
+        '#fd79a8',
+        '#a29bfe',
+        '#6c5ce7',
+        '#00b894',
+        '#00cec9',
+        '#e17055',
+      ];
+
       // Aumentato il numero di particelle per un effetto più spettacolare
       for (let i = 0; i < 80; i++) {
         const startX = Math.random() * width;
         const startY = Math.random() * height;
-        
+
         // Movimento più ampio e vario per coprire tutto lo schermo
         const moveX = (Math.random() - 0.5) * width * 0.8; // Movimento orizzontale più ampio
         const moveY = (Math.random() - 0.5) * height * 0.8; // Movimento verticale più ampio
-        
+
         // Dimensioni variabili per più dinamismo
         const size = 12 + Math.random() * 16; // Da 12 a 28 pixel
-        
+
         newFireworks.push({
           x: startX,
           y: startY,
@@ -137,7 +153,7 @@ const Fireworks: React.FC<FireworksProps> = ({ isVisible }) => {
           moveY: moveY,
         });
       }
-      
+
       setFireworks(newFireworks);
     } else {
       setFireworks([]);

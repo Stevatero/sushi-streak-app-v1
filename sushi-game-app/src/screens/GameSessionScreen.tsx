@@ -1,291 +1,362 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Animated, Modal, Share, Alert, KeyboardAvoidingView, Platform } from 'react-native';
-import { useTheme, Button, Card, TextInput } from 'react-native-paper';
-import { useRoute, useNavigation } from '@react-navigation/native';
-import useGameStore from '../store/gameStore';
-import SushiAnimation from '../components/SushiAnimation';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  Animated,
+  Modal,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { useTheme, Button, Card, TextInput, Snackbar } from 'react-native-paper';
+import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useShallow } from 'zustand/react/shallow';
+import useGameStore, { Player } from '../store/gameStore';
 import SushiStack from '../components/SushiStack';
 import Fireworks from '../components/Fireworks';
 import SettingsButton from '../components/SettingsButton';
 import SoundManager from '../utils/SoundManager';
 import { useColorScheme } from '../theme/ThemeProvider';
 import { SessionStorageService, SavedSession } from '../services/sessionStorage';
-import shareService from '../services/shareService';
+import { shareService } from '../services/shareService';
+import type { RootNavigationProp, RootStackParamList } from '../navigation/types';
+
+const FIREWORKS_DURATION_MS = 6000;
 
 const GameSessionScreen = () => {
-  const route = useRoute();
-  const navigation = useNavigation();
+  const route = useRoute<RouteProp<RootStackParamList, 'GameSession'>>();
+  const navigation = useNavigation<RootNavigationProp>();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { isDarkMode } = useColorScheme();
-  const { sessionId, sessionName, playerName, isHost, playerId } = route.params as any;
-  
-  // Stato globale con Zustand
-  const { 
-    players, 
-    gameEnded, 
-    setSession, 
-    addPiece: addPieceToStore, 
-    finishGame: finishGameInStore 
-  } = useGameStore();
-  
-  // Stato locale per le animazioni
-  const [animation] = useState(new Animated.Value(1));
-  const [sushiIconAnimation] = useState(new Animated.Value(1));
-  const [showSushiAnimation, setShowSushiAnimation] = useState(false);
+  const { sessionId, sessionName, playerName, playerId, playerToken, isHost } = route.params;
+
+  const { players, gameEnded, endReason, connection, status, startSession, addPiece, removePiece, finishGame } =
+    useGameStore(
+      useShallow((s) => ({
+        players: s.players,
+        gameEnded: s.gameEnded,
+        endReason: s.endReason,
+        connection: s.connection,
+        status: s.status,
+        startSession: s.startSession,
+        addPiece: s.addPiece,
+        removePiece: s.removePiece,
+        finishGame: s.finishGame,
+      }))
+    );
+
+  const [sushiIconAnimation] = useState(() => new Animated.Value(1));
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
-  const [hasFinished, setHasFinished] = useState(false);
-  const [sessionStartTime] = useState(new Date());
-  
-  // Stati per il salvataggio della sessione
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showFireworks, setShowFireworks] = useState(false);
+  const [finishRequested, setFinishRequested] = useState(false);
   const [restaurantName, setRestaurantName] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  
-  // Calcola se sono passati più di 10 minuti dall'inizio della sessione
-  const isSessionExpired = (Date.now() - sessionStartTime.getTime()) > 10 * 60 * 1000;
-  
-  // Determina se la condivisione è disponibile
-  const canShare = sessionId && !gameEnded && !isSessionExpired;
-  
-  // Inizializza la sessione quando il componente viene montato
+  const [snackbar, setSnackbar] = useState('');
+
+  const startedAtRef = useRef<string>(new Date().toISOString());
+  const restaurantRef = useRef('');
+  const allowExitRef = useRef(false);
+  const endHandledRef = useRef(false);
+  // Salvataggio iniziale della sessione attiva: la pulizia di fine partita deve avvenire dopo
+  const activeSavedRef = useRef<Promise<void>>(Promise.resolve());
+
+  const me = players.find((p) => p.id === playerId);
+  const myScore = me?.score ?? 0;
+  const hasFinished = finishRequested || !!me?.finished;
+  const sortedPlayers = useMemo(() => [...players].sort((a, b) => b.score - a.score), [players]);
+  const myRank = sortedPlayers.findIndex((p) => p.id === playerId) + 1;
+  const winner = sortedPlayers[0];
+  const isOnline = connection === 'connected';
+  const canShare = status === 'active' && !gameEnded;
+
+  // Avvio o ripresa della partita: il socket si (ri)collega con le credenziali del giocatore
   useEffect(() => {
-    // Usa il playerId dal backend se disponibile, altrimenti genera uno nuovo
-    const finalPlayerId = playerId || 'player-' + Date.now();
-    setSession(sessionId, sessionName, finalPlayerId, playerName, isHost);
-    SessionStorageService.saveActiveSession({
-      sessionId,
-      sessionName,
-      playerId: finalPlayerId,
-      playerName,
-      isHost,
-      startedAt: new Date().toISOString()
+    startSession({ sessionId, sessionName, playerId, playerName, playerToken, isHost });
+
+    activeSavedRef.current = (async () => {
+      const saved = await SessionStorageService.getActiveSession();
+      // In caso di riconnessione si conserva l'orario di inizio originale
+      if (saved?.sessionId === sessionId && saved.playerId === playerId && saved.startedAt) {
+        startedAtRef.current = saved.startedAt;
+      }
+      await SessionStorageService.saveActiveSession({
+        sessionId,
+        sessionName,
+        playerId,
+        playerName,
+        playerToken,
+        isHost,
+        startedAt: startedAtRef.current,
+      });
+    })();
+
+    // All'uscita dalla schermata si abbandona la stanza e si chiude il socket
+    return () => useGameStore.getState().resetGame();
+  }, [sessionId, sessionName, playerId, playerName, playerToken, isHost, startSession]);
+
+  // Uscita con conferma (tasto indietro Android): la partita resta riprendibile dalla Home
+  useEffect(() => {
+    return navigation.addListener('beforeRemove', (e) => {
+      if (allowExitRef.current || gameEnded) return;
+      e.preventDefault();
+      Alert.alert('Uscire dalla partita?', 'Potrai rientrare dalla Home finché la sessione è attiva.', [
+        { text: 'Resta', style: 'cancel' },
+        {
+          text: 'Esci',
+          style: 'destructive',
+          onPress: () => {
+            allowExitRef.current = true;
+            navigation.dispatch(e.data.action);
+          },
+        },
+      ]);
     });
-  }, []);
+  }, [navigation, gameEnded]);
 
-  // Funzione per aggiungere un pezzo di sushi
-  const addPiece = () => {
-    addPieceToStore();
-    
-    // Riproduci il suono del pezzo
-    SoundManager.playPieceSound();
-    
-    // Animazione di pop dell'icona sushi (scomparsa e riapparizione)
-    Animated.sequence([
-      Animated.timing(sushiIconAnimation, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-      Animated.timing(sushiIconAnimation, {
-        toValue: 1.2,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      Animated.timing(sushiIconAnimation, {
-        toValue: 1,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  // Funzione per segnalare che il giocatore ha finito
-  const finishGame = () => {
-    setHasFinished(true); // Nascondi immediatamente il pulsante "Aggiungi pezzo"
-    finishGameInStore();
-    // Riproduci il suono di vittoria
-    SoundManager.playVictorySound();
-    // Mostra la modale della classifica
-    setShowLeaderboardModal(true);
-  };
-
-  // Funzione per condividere la sessione
-  const shareSession = async () => {
-    try {
-      if (!sessionId || !sessionName) {
-        Alert.alert('Errore', 'Dati della sessione non disponibili');
-        return;
+  const persistResult = useCallback(
+    async (list: Player[]) => {
+      if (list.length === 0) return;
+      const sorted = [...list].sort((a, b) => b.score - a.score);
+      const record: SavedSession = {
+        id: `${sessionId}:${startedAtRef.current}`,
+        sessionName,
+        restaurant: restaurantRef.current,
+        date: startedAtRef.current,
+        players: sorted,
+        winner: { name: sorted[0]?.name || 'Nessuno', score: sorted[0]?.score || 0 },
+        duration: SessionStorageService.formatDuration(startedAtRef.current),
+      };
+      try {
+        await SessionStorageService.upsertSession(record);
+      } catch {
+        setSnackbar('Impossibile salvare la partita nello storico');
       }
+    },
+    [sessionId, sessionName]
+  );
 
-      // Verifica se la sessione può essere condivisa
-      const canShare = await shareService.canShareSession(sessionId);
-      
-      if (!canShare) {
-        Alert.alert(
-          'Sessione non disponibile',
-          'La sessione non è più disponibile per la condivisione.'
-        );
-        return;
+  // Salvataggio automatico nello storico quando il giocatore ha finito o la partita è chiusa
+  useEffect(() => {
+    if (hasFinished || gameEnded) persistResult(players);
+  }, [players, hasFinished, gameEnded, persistResult]);
+
+  // Gestione della fine partita (tutti hanno finito, scadenza o credenziali non valide)
+  useEffect(() => {
+    if (!gameEnded || endHandledRef.current) return;
+    endHandledRef.current = true;
+    activeSavedRef.current.then(() => SessionStorageService.clearActiveSession());
+
+    if (endReason === 'ended') {
+      setShowLeaderboardModal(true);
+      if (winner?.id === playerId) {
+        SoundManager.playVictorySound();
+        setShowFireworks(true);
+        setTimeout(() => setShowFireworks(false), FIREWORKS_DURATION_MS);
       }
-
-      // Mostra il modale di condivisione
-      setShowShareModal(true);
-
-    } catch (error) {
-      console.error('Errore nella condivisione:', error);
-      Alert.alert('Errore', 'Si è verificato un errore durante la condivisione');
+    } else if (endReason === 'expired') {
+      Alert.alert(
+        'Sessione scaduta',
+        'La sessione è stata chiusa per inattività. I punteggi sono stati salvati nello storico.'
+      );
+    } else if (endReason === 'unauthorized' || endReason === 'not_found') {
+      Alert.alert('Sessione non disponibile', 'Non è possibile rientrare in questa partita.', [
+        { text: 'OK', onPress: () => goHome() },
+      ]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameEnded, endReason]);
+
+  const goHome = () => {
+    allowExitRef.current = true;
+    navigation.popTo('Home');
   };
 
-  // Funzione per copiare il codice sessione
-  const copySessionCode = async () => {
-    try {
-      const success = await shareService.copySessionCode(sessionId);
-      
-      if (success) {
-        Alert.alert('✅ Copiato', 'Codice sessione copiato negli appunti!');
-      } else {
-        Alert.alert('❌ Errore', 'Impossibile copiare il codice');
-      }
-      setShowShareModal(false);
-    } catch (error) {
-      console.error('Errore nella copia del codice:', error);
-      Alert.alert('❌ Errore', 'Impossibile copiare il codice');
-    }
-  };
-
-  // Funzione per condividere il link
-  const shareSessionLink = async () => {
-    try {
-      const success = await shareService.shareSession(sessionId, sessionName);
-      
-      if (success) {
-        Alert.alert('✅ Successo', 'Sessione condivisa con successo!');
-      } else {
-        Alert.alert('❌ Errore', 'Impossibile condividere la sessione');
-      }
-      setShowShareModal(false);
-    } catch (error) {
-      console.error('Errore nella condivisione:', error);
-      Alert.alert('❌ Errore', 'Impossibile condividere la sessione');
-    }
-  };
-
-  // Funzione per salvare la sessione localmente
-  const saveSessionLocally = async () => {
-    if (!restaurantName.trim()) {
-      Alert.alert('Campo obbligatorio', 'Inserisci il nome del ristorante');
+  const handleAddPiece = async () => {
+    if (!isOnline) {
+      setSnackbar('Sei offline: attendi la riconnessione');
       return;
     }
+    SoundManager.playPieceSound();
+    Animated.sequence([
+      Animated.timing(sushiIconAnimation, { toValue: 0, duration: 150, useNativeDriver: true }),
+      Animated.timing(sushiIconAnimation, { toValue: 1.2, duration: 200, useNativeDriver: true }),
+      Animated.timing(sushiIconAnimation, { toValue: 1, duration: 150, useNativeDriver: true }),
+    ]).start();
 
-    setIsSaving(true);
-    try {
-      const winner = sortedPlayers[0];
-      const savedSession: SavedSession = {
-        id: SessionStorageService.generateSessionId(),
-        sessionName,
-        restaurant: restaurantName.trim(),
-        date: SessionStorageService.formatDate(new Date()),
-        players: sortedPlayers,
-        winner: {
-          name: winner?.name || 'Nessuno',
-          score: winner?.score || 0
-        }
-      };
-
-      await SessionStorageService.saveSession(savedSession);
-      setShowSaveModal(false);
-      setRestaurantName('');
-      Alert.alert('Successo', 'Sessione salvata con successo!');
-    } catch (error) {
-      Alert.alert('Errore', 'Impossibile salvare la sessione');
-    } finally {
-      setIsSaving(false);
-    }
+    const res = await addPiece();
+    if (!res.ok && res.code !== 'rate_limited') setSnackbar(res.error || 'Pezzo non registrato');
   };
 
-  // Ordinamento dei giocatori per punteggio e limitazione alla top 3
-  const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
-  const top3Players = sortedPlayers.slice(0, 3);
+  const handleRemovePiece = async () => {
+    const res = await removePiece();
+    setSnackbar(res.ok ? 'Ultimo pezzo annullato' : res.error || 'Impossibile annullare');
+  };
+
+  const handleFinish = () => {
+    Alert.alert('Hai finito di mangiare?', 'Dopo la conferma non potrai più aggiungere pezzi.', [
+      { text: 'Annulla', style: 'cancel' },
+      {
+        text: 'Ho finito!',
+        onPress: async () => {
+          setFinishRequested(true);
+          const res = await finishGame();
+          if (!res.ok) {
+            setFinishRequested(false);
+            setSnackbar(res.error || 'Impossibile completare, riprova');
+            return;
+          }
+          SoundManager.playVictorySound();
+          setShowLeaderboardModal(true);
+        },
+      },
+    ]);
+  };
+
+  const copySessionCode = async () => {
+    const success = await shareService.copySessionCode(sessionId);
+    setShowShareModal(false);
+    setSnackbar(success ? 'Codice sessione copiato!' : 'Impossibile copiare il codice');
+  };
+
+  const shareSessionLink = async () => {
+    const result = await shareService.shareSession(sessionId, sessionName);
+    setShowShareModal(false);
+    if (result === 'error') setSnackbar('Impossibile condividere la sessione');
+  };
+
+  const saveRestaurant = async () => {
+    restaurantRef.current = restaurantName.trim();
+    await persistResult(useGameStore.getState().players);
+    setShowSaveModal(false);
+    setSnackbar('Partita salvata nello storico');
+  };
+
+  const textColor = isDarkMode ? '#FFFFFF' : theme.colors.onSurface;
+
+  const renderPlayerRow = (item: Player, index: number, large = false) => (
+    <View
+      style={[
+        large ? styles.modalPlayerRow : styles.playerRow,
+        { borderBottomColor: theme.colors.outlineVariant },
+        item.id === playerId ? { backgroundColor: theme.colors.primaryContainer } : null,
+      ]}
+    >
+      <Text style={[large ? styles.modalRank : styles.rank, { color: large ? theme.colors.primary : textColor }]}>
+        {index + 1}°
+      </Text>
+      <Text style={[large ? styles.modalPlayerName : styles.playerName, { color: textColor }]} numberOfLines={1}>
+        {item.name}
+        {item.id === playerId ? ' (tu)' : ''}
+      </Text>
+      <Text style={[large ? styles.modalScore : styles.score, { color: textColor }]}>{item.score} 🍣</Text>
+      {!large && item.finished && <Text style={styles.finishedTag}>Finito</Text>}
+    </View>
+  );
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Animazioni */}
-      <SushiAnimation isVisible={showSushiAnimation} />
-      <SushiStack pieceCount={players.find(p => p.name === playerName)?.score || 0} />
-      <Fireworks isVisible={false} />
-      
-      <Text style={[styles.sessionLabel, { color: theme.colors.onSurface }]}>
-        Sessione
-      </Text>
-      <TouchableOpacity 
-        onPress={canShare ? shareSession : undefined}
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: theme.colors.background, paddingTop: insets.top + 16, paddingBottom: insets.bottom },
+      ]}
+    >
+      <SushiStack pieceCount={myScore} />
+      <Fireworks isVisible={showFireworks} />
+
+      {!isOnline && !gameEnded && (
+        <View style={[styles.connectionBanner, { backgroundColor: theme.colors.errorContainer }]}>
+          <Text style={{ color: theme.colors.onErrorContainer, textAlign: 'center' }}>
+            {connection === 'connecting' ? '🔄 Riconnessione in corso…' : '⚠️ Non connesso al server'}
+          </Text>
+        </View>
+      )}
+
+      <Text style={[styles.sessionLabel, { color: theme.colors.onSurface }]}>Sessione</Text>
+      <TouchableOpacity
+        onPress={canShare ? () => setShowShareModal(true) : undefined}
         disabled={!canShare}
         style={styles.sessionTitleContainer}
+        accessibilityRole="button"
+        accessibilityLabel="Condividi la sessione"
       >
-        <Text style={[
-          styles.title, 
-          { 
-            color: canShare ? theme.colors.primary : theme.colors.onSurface,
-            textDecorationLine: canShare ? 'underline' : 'none'
-          }
-        ]}>
+        <Text
+          style={[
+            styles.title,
+            {
+              color: canShare ? theme.colors.primary : theme.colors.onSurface,
+              textDecorationLine: canShare ? 'underline' : 'none',
+            },
+          ]}
+        >
           {sessionName || sessionId}
         </Text>
-        {canShare && (
-          <Text style={[styles.shareHint, { color: theme.colors.onSurfaceVariant }]}>
-            👆 Condividi
-          </Text>
-        )}
+        {canShare && <Text style={[styles.shareHint, { color: theme.colors.onSurfaceVariant }]}>👆 Condividi</Text>}
       </TouchableOpacity>
-      
+
       <Card style={styles.leaderboardCard}>
-        <Card.Title title="Classifica in tempo reale" />
+        <Card.Title
+          title="Classifica in tempo reale"
+          subtitle={myRank > 0 ? `Sei ${myRank}° su ${players.length} · ${myScore} pezzi` : undefined}
+        />
         <Card.Content>
           <FlatList
-            data={top3Players}
+            data={sortedPlayers}
             keyExtractor={(item) => item.id}
-            renderItem={({ item, index }) => (
-              <View style={[
-                styles.playerRow, 
-                item.name === playerName ? { backgroundColor: theme.colors.primaryContainer } : null
-              ]}>
-                <Text style={[styles.rank, { color: isDarkMode ? '#FFFFFF' : undefined }]}>{index + 1}</Text>
-                <Text style={[styles.playerName, { color: isDarkMode ? '#FFFFFF' : undefined }]}>{item.name}</Text>
-                <Text style={[styles.score, { color: isDarkMode ? '#FFFFFF' : undefined }]}>{item.score}   🍣</Text>
-                {item.finished && <Text style={styles.finishedTag}>Finito</Text>}
-              </View>
-            )}
+            renderItem={({ item, index }) => renderPlayerRow(item, index)}
+            style={styles.liveList}
           />
         </Card.Content>
       </Card>
-      
+
       {!gameEnded ? (
         <>
           <View style={styles.controlsContainer}>
-            {!hasFinished && !players.find(p => p.name === playerName)?.finished && (
-              <TouchableOpacity
-                style={[styles.addButton, { backgroundColor: theme.colors.primary }]}
-                onPress={addPiece}
-              >
-                <Animated.Text 
-                  style={[
-                    styles.sushiIcon,
-                    {
-                      transform: [{ scale: sushiIconAnimation }],
-                      opacity: sushiIconAnimation
-                    }
-                  ]}
+            {!hasFinished && (
+              <>
+                <TouchableOpacity
+                  style={[styles.addButton, { backgroundColor: theme.colors.primary, opacity: isOnline ? 1 : 0.6 }]}
+                  onPress={handleAddPiece}
+                  accessibilityRole="button"
+                  accessibilityLabel="Aggiungi pezzo"
                 >
-                  🍣
-                </Animated.Text>
-                <Text style={styles.addButtonText}>Aggiungi Pezzo</Text>
-              </TouchableOpacity>
+                  <Animated.Text
+                    style={[
+                      styles.sushiIcon,
+                      { transform: [{ scale: sushiIconAnimation }], opacity: sushiIconAnimation },
+                    ]}
+                  >
+                    🍣
+                  </Animated.Text>
+                  <Text style={styles.addButtonText}>Aggiungi Pezzo</Text>
+                </TouchableOpacity>
+                <Button mode="text" icon="undo" onPress={handleRemovePiece} disabled={myScore === 0 || !isOnline}>
+                  Annulla ultimo
+                </Button>
+              </>
+            )}
+            {hasFinished && (
+              <Text style={[styles.waitingText, { color: theme.colors.onSurface }]}>
+                Hai finito! In attesa degli altri giocatori…
+              </Text>
             )}
           </View>
-          
-          <Button 
-            mode="outlined" 
-            onPress={finishGame}
-            disabled={hasFinished || players.find(p => p.name === playerName)?.finished}
+
+          <Button
+            mode="outlined"
+            onPress={handleFinish}
+            disabled={hasFinished}
             style={[
               styles.finishButtonBottomLeft,
               {
-                backgroundColor: isDarkMode 
-                  ? 'rgba(255, 255, 255, 1)' 
-                  : 'rgba(255, 255, 255, 0.8)'
-              }
+                bottom: 20 + insets.bottom,
+                backgroundColor: isDarkMode ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.8)',
+              },
             ]}
           >
             Ho finito!
@@ -294,21 +365,15 @@ const GameSessionScreen = () => {
       ) : (
         <View style={styles.gameEndedContainer}>
           <Text style={[styles.gameEndedText, { color: theme.colors.primary }]}>
-            Partita terminata!
+            {endReason === 'expired' ? 'Sessione scaduta' : 'Partita terminata!'}
           </Text>
           <Text style={[styles.winnerText, { color: theme.colors.secondary }]}>
-            Vincitore: {sortedPlayers[0]?.name || 'Nessuno'} con {sortedPlayers[0]?.score || 0} pezzi!
+            Vincitore: {winner?.name || 'Nessuno'} con {winner?.score || 0} pezzi!
           </Text>
-          
-          <Button 
-            mode="contained" 
-            onPress={() => {
-              useGameStore.getState().resetGame();
-              SessionStorageService.clearActiveSession();
-              navigation.navigate('Home' as never);
-            }}
-            style={styles.newGameButton}
-          >
+          <Button mode="outlined" onPress={() => setShowSaveModal(true)} style={styles.modalButton}>
+            📍 Aggiungi ristorante
+          </Button>
+          <Button mode="contained" onPress={goHome} style={styles.newGameButton}>
             🎮 Nuova Partita
           </Button>
         </View>
@@ -317,62 +382,47 @@ const GameSessionScreen = () => {
       {/* Modale della classifica finale */}
       <Modal
         visible={showLeaderboardModal}
-        transparent={true}
+        transparent
         animationType="slide"
         onRequestClose={() => setShowLeaderboardModal(false)}
-        statusBarTranslucent={true}
+        statusBarTranslucent
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
             <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>
-              🏆 Classifica Finale
+              {gameEnded ? '🏆 Classifica Finale' : '🏆 Classifica attuale'}
             </Text>
-            
+
             <FlatList
               data={sortedPlayers}
               keyExtractor={(item) => item.id}
-              renderItem={({ item, index }) => (
-                <View style={[styles.modalPlayerRow, { borderBottomColor: theme.colors.outline }]}>
-                  <Text style={[styles.modalRank, { color: theme.colors.primary }]}>
-                    {index + 1}°
-                  </Text>
-                  <Text style={[styles.modalPlayerName, { color: isDarkMode ? '#FFFFFF' : theme.colors.onSurface }]}>
-                    {item.name}
-                  </Text>
-                  <Text style={[styles.modalScore, { color: isDarkMode ? '#FFFFFF' : theme.colors.secondary }]}>
-                    {item.score}   🍣
-                  </Text>
-                </View>
-              )}
+              renderItem={({ item, index }) => renderPlayerRow(item, index, true)}
               style={styles.leaderboardList}
-              showsVerticalScrollIndicator={true}
             />
-            
+
+            <Text style={[styles.savedNote, { color: theme.colors.onSurfaceVariant }]}>
+              La partita viene salvata automaticamente nello storico.
+            </Text>
+
             <View style={styles.modalButtons}>
-              <Button 
-                mode="outlined" 
-                onPress={() => setShowLeaderboardModal(false)}
-                style={styles.modalButton}
-              >
+              <Button mode="outlined" onPress={() => setShowLeaderboardModal(false)} style={styles.modalButton}>
                 Chiudi
               </Button>
-              <Button 
-                mode="outlined" 
+              <Button
+                mode="outlined"
                 onPress={() => {
                   setShowLeaderboardModal(false);
                   setShowSaveModal(true);
                 }}
                 style={styles.modalButton}
               >
-                Salva Sessione
+                📍 Aggiungi ristorante
               </Button>
-              <Button 
-                mode="contained" 
+              <Button
+                mode="contained"
                 onPress={() => {
                   setShowLeaderboardModal(false);
-                  useGameStore.getState().resetGame();
-                  SessionStorageService.clearActiveSession();
-                  navigation.navigate('Home' as never);
+                  goHome();
                 }}
                 style={styles.modalButton}
               >
@@ -383,180 +433,126 @@ const GameSessionScreen = () => {
         </View>
       </Modal>
 
-       {/* Modale per salvare la sessione */}
-       <Modal
-         visible={showSaveModal}
-         transparent={true}
-         animationType="slide"
-         onRequestClose={() => setShowSaveModal(false)}
-         statusBarTranslucent={true}
-       >
-         <View style={styles.modalOverlay}>
-           <KeyboardAvoidingView 
-             style={styles.keyboardAvoidingContainer}
-             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-             keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-           >
-             <TouchableOpacity 
-               style={styles.modalTouchableOverlay}
-               activeOpacity={1}
-               onPress={() => {
-                 setShowSaveModal(false);
-                 setRestaurantName('');
-               }}
-             >
-               <TouchableOpacity 
-                 style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}
-                 activeOpacity={1}
-                 onPress={(e) => e.stopPropagation()}
-               >
-                 <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>
-                   💾 Salva Sessione
-                 </Text>
-                 
-                 <Text style={[styles.saveModalDescription, { color: theme.colors.onSurface }]}>
-                   Salva questa partita per rivederla in futuro
-                 </Text>
-                 
-                 <TextInput
-                   mode="outlined"
-                   label="Nome del ristorante"
-                   placeholder="Es. Sushi Zen, Sakura, ..."
-                   value={restaurantName}
-                   onChangeText={setRestaurantName}
-                   style={styles.restaurantInput}
-                   theme={{ colors: { primary: theme.colors.primary } }}
-                   autoFocus={true}
-                   returnKeyType="done"
-                   onSubmitEditing={() => {
-                     if (restaurantName.trim()) {
-                       saveSessionLocally();
-                     }
-                   }}
-                 />
-                 
-                 <View style={styles.saveModalInfo}>
-                   <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
-                     Sessione: {sessionName}
-                   </Text>
-                   <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
-                     Data: {SessionStorageService.formatDate(new Date())}
-                   </Text>
-                   <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
-                     Vincitore: {sortedPlayers[0]?.name || 'Nessuno'} ({sortedPlayers[0]?.score || 0} pezzi)
-                   </Text>
-                 </View>
-                 
-                 <View style={styles.modalButtons}>
-                   <Button 
-                     mode="outlined" 
-                     onPress={() => {
-                       setShowSaveModal(false);
-                       setRestaurantName('');
-                     }}
-                     style={styles.modalButton}
-                     disabled={isSaving}
-                   >
-                     Annulla
-                   </Button>
-                   <Button 
-                     mode="contained" 
-                     onPress={saveSessionLocally}
-                     style={styles.modalButton}
-                     loading={isSaving}
-                     disabled={isSaving}
-                   >
-                     Salva
-                   </Button>
-                 </View>
-               </TouchableOpacity>
-             </TouchableOpacity>
-           </KeyboardAvoidingView>
-         </View>
-       </Modal>
+      {/* Modale per il nome del ristorante */}
+      <Modal
+        visible={showSaveModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSaveModal(false)}
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView
+            style={styles.keyboardAvoidingContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
+              <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>📍 Dove avete mangiato?</Text>
 
-             {/* Modale di condivisione */}
-       <Modal
-         visible={showShareModal}
-         transparent={true}
-         animationType="slide"
-         onRequestClose={() => setShowShareModal(false)}
-         statusBarTranslucent={true}
-       >
-         <View style={styles.modalOverlay}>
-           <TouchableOpacity 
-             style={styles.modalTouchableOverlay}
-             activeOpacity={1}
-             onPress={() => setShowShareModal(false)}
-           >
-             <TouchableOpacity 
-               style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}
-               activeOpacity={1}
-               onPress={(e) => e.stopPropagation()}
-             >
-               <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>
-                 🍣 Condividi Sessione
-               </Text>
-               
-               <Text style={[styles.saveModalDescription, { color: theme.colors.onSurface }]}>
-                 Condividi la sessione "{sessionName}" con i tuoi amici
-               </Text>
-               
-               <View style={styles.shareModalButtons}>
-                 <Button 
-                   mode="contained" 
-                   onPress={copySessionCode}
-                   style={styles.shareModalButton}
-                   icon="content-copy"
-                 >
-                    Copia Codice
-                 </Button>
-                 
-                 <Button 
-                   mode="contained" 
-                   onPress={shareSessionLink}
-                   style={styles.shareModalButton}
-                   icon="share-variant"
-                 >
-                    Condividi Link
-                 </Button>
-               </View>
-             </TouchableOpacity>
-           </TouchableOpacity>
-         </View>
-       </Modal>
+              <TextInput
+                mode="outlined"
+                label="Nome del ristorante"
+                placeholder="Es. Sushi Zen, Sakura, ..."
+                value={restaurantName}
+                onChangeText={setRestaurantName}
+                style={styles.restaurantInput}
+                maxLength={60}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={saveRestaurant}
+              />
 
-       
-       {/* Settings Button positioned at bottom right */}
-       <View style={styles.settingsButtonContainer}>
-         <SettingsButton />
-       </View>
-     </View>
-   );
- };
+              <View style={styles.saveModalInfo}>
+                <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
+                  Sessione: {sessionName}
+                </Text>
+                <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
+                  Data: {SessionStorageService.formatDate(startedAtRef.current)}
+                </Text>
+                <Text style={[styles.saveInfoLabel, { color: theme.colors.onSurfaceVariant }]}>
+                  Vincitore: {winner?.name || 'Nessuno'} ({winner?.score || 0} pezzi)
+                </Text>
+              </View>
+
+              <View style={styles.modalButtons}>
+                <Button mode="outlined" onPress={() => setShowSaveModal(false)} style={styles.modalButton}>
+                  Annulla
+                </Button>
+                <Button mode="contained" onPress={saveRestaurant} style={styles.modalButton}>
+                  Salva
+                </Button>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* Modale di condivisione */}
+      <Modal
+        visible={showShareModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowShareModal(false)}
+        statusBarTranslucent
+      >
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowShareModal(false)}>
+          <TouchableOpacity
+            style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>🍣 Condividi Sessione</Text>
+            <Text style={[styles.saveModalDescription, { color: theme.colors.onSurface }]}>
+              Codice: <Text style={{ fontWeight: 'bold' }}>{sessionId}</Text>
+            </Text>
+            <View style={styles.shareModalButtons}>
+              <Button mode="contained" onPress={copySessionCode} style={styles.shareModalButton} icon="content-copy">
+                Copia Codice
+              </Button>
+              <Button mode="contained" onPress={shareSessionLink} style={styles.shareModalButton} icon="share-variant">
+                Condividi Link
+              </Button>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      <View style={[styles.settingsButtonContainer, { bottom: 20 + insets.bottom }]}>
+        <SettingsButton />
+      </View>
+
+      <Snackbar visible={!!snackbar} onDismiss={() => setSnackbar('')} duration={2500} style={styles.snackbar}>
+        {snackbar}
+      </Snackbar>
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    paddingTop: 60, // Aumentato per evitare sovrapposizione con il notch
+    paddingHorizontal: 20,
+  },
+  connectionBanner: {
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 8,
   },
   sessionLabel: {
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 2,
     opacity: 0.7,
-    marginTop: 10, // Aggiunto margine superiore per abbassare ulteriormente
+    marginTop: 10,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 20,
   },
   sessionTitleContainer: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   shareHint: {
     fontSize: 12,
@@ -565,7 +561,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   leaderboardCard: {
-    marginBottom: 20,
+    marginBottom: 16,
     borderRadius: 10,
     elevation: 4,
     shadowColor: '#000',
@@ -573,18 +569,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
   },
+  liveList: {
+    maxHeight: 200,
+  },
   playerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
     borderRadius: 6,
     marginBottom: 4,
   },
   rank: {
-    width: 30,
+    width: 34,
     fontWeight: 'bold',
     fontSize: 16,
   },
@@ -608,13 +606,13 @@ const styles = StyleSheet.create({
   },
   controlsContainer: {
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 8,
   },
   addButton: {
     paddingVertical: 15,
     paddingHorizontal: 30,
     borderRadius: 50,
-    marginBottom: 15,
+    marginBottom: 4,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -632,13 +630,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  finishButton: {
-    borderRadius: 30,
-    paddingVertical: 6,
+  waitingText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 10,
+    opacity: 0.8,
   },
   finishButtonBottomLeft: {
     position: 'absolute',
-    bottom: 20,
     left: 20,
     borderRadius: 30,
     paddingVertical: 6,
@@ -646,7 +645,7 @@ const styles = StyleSheet.create({
   },
   gameEndedContainer: {
     alignItems: 'center',
-    marginTop: 30,
+    marginTop: 10,
     padding: 20,
     borderRadius: 15,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
@@ -660,35 +659,22 @@ const styles = StyleSheet.create({
   winnerText: {
     fontSize: 20,
     textAlign: 'center',
-    marginBottom: 30,
+    marginBottom: 20,
   },
   newGameButton: {
-    marginTop: 20,
-    paddingHorizontal: 50, // Aumentato da 30 a 50
-    paddingVertical: 15,   // Aggiunto padding verticale
+    marginTop: 12,
+    paddingHorizontal: 50,
+    paddingVertical: 15,
     borderRadius: 30,
-    minWidth: 200,         // Larghezza minima
+    minWidth: 200,
   },
-  // Stili per la modale
   modalOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    width: '100%',
-    height: '100%',
+    flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   keyboardAvoidingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-  },
-  modalTouchableOverlay: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -734,23 +720,26 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  savedNote: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
+  },
   modalButtons: {
     flexDirection: 'column',
-    marginTop: 20,
-    paddingTop: 20,
+    marginTop: 16,
     gap: 10,
   },
   modalButton: {
     borderRadius: 25,
-    paddingHorizontal: 20, // Aggiunto padding orizzontale
-    paddingVertical: 12,   // Aggiunto padding verticale
-    minWidth: 120,         // Larghezza minima
+    paddingHorizontal: 20,
+    paddingVertical: 6,
+    minWidth: 120,
   },
   leaderboardList: {
     maxHeight: 300,
     marginBottom: 10,
   },
-  // Stili per il modale di salvataggio
   saveModalDescription: {
     fontSize: 16,
     textAlign: 'center',
@@ -764,7 +753,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.05)',
     padding: 15,
     borderRadius: 10,
-    marginBottom: 20,
   },
   saveInfoLabel: {
     fontSize: 14,
@@ -772,26 +760,23 @@ const styles = StyleSheet.create({
   },
   settingsButtonContainer: {
     position: 'absolute',
-    bottom: 20,
     right: 20,
     zIndex: 10,
   },
-  // Stili per il modale di condivisione
   shareModalButtons: {
     flexDirection: 'column',
     alignItems: 'center',
     gap: 15,
-    marginTop: 20,
+    marginTop: 10,
   },
   shareModalButton: {
     width: '100%',
-    paddingVertical: 15,
-    paddingHorizontal: 30,
+    paddingVertical: 10,
     borderRadius: 30,
-    minHeight: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
-  });
-  
-  export default GameSessionScreen;
+  snackbar: {
+    marginBottom: 80,
+  },
+});
+
+export default GameSessionScreen;

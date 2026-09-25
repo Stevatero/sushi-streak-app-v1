@@ -1,0 +1,12 @@
+# Normalizza i fine riga nel repository (LF), lasciando CRLF solo agli script PowerShell
+* text=auto eol=lf
+*.ps1 text eol=crlf
+
+# File binari
+*.png binary
+*.jpg binary
+*.mp3 binary
+*.ttf binary
+*.db binary
+*.jks binary
+*.keystore binary

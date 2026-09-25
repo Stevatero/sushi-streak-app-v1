@@ -4,7 +4,7 @@ export const lightTheme = {
   ...MD3LightTheme,
   colors: {
     ...MD3LightTheme.colors,
-    primary: '#FF8A65', // Arancione più caldo, simile al tema scuro
+    primary: '#FF8A65', // Arancione caldo, coerente con il tema scuro
     secondary: '#4ECDC4',
     background: '#F7F9FC',
     surface: '#FFFFFF',
@@ -14,7 +14,7 @@ export const lightTheme = {
     disabled: '#C5C6C7',
     placeholder: '#A0A0A0',
     backdrop: 'rgba(0, 0, 0, 0.5)',
-    notification: '#FF8A65', // Arancione più caldo, simile al tema scuro
+    notification: '#FF8A65',
   },
 };
 
@@ -22,15 +22,16 @@ export const darkTheme = {
   ...MD3DarkTheme,
   colors: {
     ...MD3DarkTheme.colors,
-    primary: '#FF9E80',////Aaipc oteepEùd e uGaro
+    primary: '#FF9E80', // Arancione più tenue per il tema scuro
     surface: '#3A3A3A', // Grigio più chiaro
     error: '#FF5252',
     text: '#E0E0E0', // Bianco meno brillante
-    onSurface: '#E0E0E0', // Bianco meno brillante
+    onSurface: '#E0E0E0',
     disabled: '#757575',
     placeholder: '#A0A0A0',
     backdrop: 'rgba(0, 0, 0, 0.5)',
-    notification: '#FF9E80', // Arancione più tenue
+    notification: '#FF9E80',
   },
 };
-9E80 // Arancione più tenue
+
+export type AppTheme = typeof lightTheme;

@@ -1,12 +1,17 @@
 import { create } from 'zustand';
-import socketService from '../services/socketService';
+import socketService, { AckResponse, ConnectionStatus, Player, SessionSnapshot } from '../services/socketService';
 
-// Tipi
-export interface Player {
-  id: string;
-  name: string;
-  score: number;
-  finished: boolean;
+export type { Player } from '../services/socketService';
+
+export type SessionEndReason = 'ended' | 'expired' | 'unauthorized' | 'not_found' | null;
+
+interface StartSessionParams {
+  sessionId: string;
+  sessionName: string;
+  playerId: string;
+  playerName: string;
+  playerToken: string;
+  isHost: boolean;
 }
 
 interface GameState {
@@ -16,71 +21,81 @@ interface GameState {
   playerName: string | null;
   isHost: boolean;
   players: Player[];
+  status: SessionSnapshot['status'] | null;
+  expiresAt: number | null;
+  connection: ConnectionStatus;
   gameEnded: boolean;
-  
-  // Azioni
-  setSession: (sessionId: string, sessionName: string, playerId: string, playerName: string, isHost: boolean) => void;
-  updatePlayers: (players: Player[]) => void;
-  addPiece: () => void;
-  finishGame: () => void;
-  setGameEnded: (ended: boolean) => void;
+  endReason: SessionEndReason;
+
+  startSession: (params: StartSessionParams) => void;
+  addPiece: () => Promise<AckResponse>;
+  removePiece: () => Promise<AckResponse>;
+  finishGame: () => Promise<AckResponse>;
   resetGame: () => void;
 }
 
-// Store Zustand
-const useGameStore = create<GameState>((set, get) => ({
+const initialState = {
   sessionId: null,
   sessionName: null,
   playerId: null,
   playerName: null,
   isHost: false,
-  players: [],
+  players: [] as Player[],
+  status: null,
+  expiresAt: null,
+  connection: 'disconnected' as ConnectionStatus,
   gameEnded: false,
-  
-  setSession: (sessionId, sessionName, playerId, playerName, isHost) => {
+  endReason: null as SessionEndReason,
+};
+
+const useGameStore = create<GameState>((set, get) => ({
+  ...initialState,
+
+  startSession: ({ sessionId, sessionName, playerId, playerName, playerToken, isHost }) => {
+    const current = get();
+    if (current.sessionId !== sessionId || current.playerId !== playerId) {
+      set({ ...initialState, connection: socketService.getStatus() });
+    }
     set({ sessionId, sessionName, playerId, playerName, isHost });
-    
-    socketService.connect().then(() => {
-      socketService.onSessionUpdate((data) => {
-        if (data.players) {
-          get().updatePlayers(data.players);
-        }
-      });
-      socketService.onGameEnded(() => {
-        get().setGameEnded(true);
-      });
-      socketService.joinSession(sessionId, playerId, playerName);
-    });
+    socketService.joinSession({ sessionId, playerId, token: playerToken });
   },
-  
-  updatePlayers: (players) => {
-    set({ players });
-  },
-  
-  addPiece: () => {
-    socketService.addPiece();
-  },
-  
-  finishGame: () => {
-    socketService.finishGame();
-  },
-  
-  setGameEnded: (ended) => {
-    set({ gameEnded: ended });
-  },
-  
+
+  addPiece: () => socketService.addPiece(),
+  removePiece: () => socketService.removePiece(),
+  finishGame: () => socketService.finishGame(),
+
   resetGame: () => {
-    socketService.disconnect();
-    set({
-      sessionId: null,
-      sessionName: null,
-      playerId: null,
-      playerName: null,
-      isHost: false,
-      players: [],
-      gameEnded: false
-    });
-  }
+    socketService.leaveSession();
+    set({ ...initialState });
+  },
 }));
+
+// Gli eventi del socket vengono collegati allo store una sola volta
+const applySnapshot = (snapshot: SessionSnapshot) => {
+  const { sessionId } = useGameStore.getState();
+  if (!sessionId || snapshot.id !== sessionId) return;
+  const ended = snapshot.status !== 'active';
+  useGameStore.setState({
+    players: snapshot.players,
+    status: snapshot.status,
+    expiresAt: snapshot.expiresAt,
+    gameEnded: ended,
+    endReason: ended ? (snapshot.status as SessionEndReason) : null,
+  });
+};
+
+socketService.on('session', applySnapshot);
+socketService.on('gameEnded', applySnapshot);
+socketService.on('connection', (connection) => useGameStore.setState({ connection }));
+socketService.on('sessionExpired', ({ sessionId }) => {
+  if (useGameStore.getState().sessionId === sessionId) {
+    useGameStore.setState({ status: 'expired', gameEnded: true, endReason: 'expired' });
+  }
+});
+socketService.on('joinFailed', (response) => {
+  if (response.code === 'unauthorized' || response.code === 'not_found') {
+    useGameStore.setState({ gameEnded: true, endReason: response.code });
+  }
+});
 
 export default useGameStore;

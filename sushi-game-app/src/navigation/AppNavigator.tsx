@@ -1,46 +1,50 @@
 import React from 'react';
-import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HomeScreen from '../screens/HomeScreen';
 import GameSessionScreen from '../screens/GameSessionScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SessionHistoryScreen from '../screens/SessionHistoryScreen';
+import { useColorScheme } from '../theme/ThemeProvider';
+import type { RootStackParamList } from './types';
 
-const Stack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
-interface AppNavigatorProps {
-  navigationRef: React.RefObject<NavigationContainerRef<any>>;
-}
+const AppNavigator = () => {
+  const { isDarkMode, theme } = useColorScheme();
+  const baseTheme = isDarkMode ? DarkTheme : DefaultTheme;
 
-const AppNavigator = ({ navigationRef }: AppNavigatorProps) => {
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer
+      theme={{
+        ...baseTheme,
+        colors: { ...baseTheme.colors, background: theme.colors.background, primary: theme.colors.primary },
+      }}
+    >
       <Stack.Navigator
         initialRouteName="Home"
         screenOptions={{
           animation: 'fade',
-          gestureEnabled: true
+          gestureEnabled: true,
+          headerShown: false,
         }}
       >
-        <Stack.Screen 
-          name="Home" 
-          component={HomeScreen} 
-          options={{ headerShown: false }}
+        <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen
+          name="GameSession"
+          component={GameSessionScreen}
+          // Niente swipe-back: l'uscita dalla partita passa sempre da una conferma
+          options={{ animation: 'slide_from_right', gestureEnabled: false }}
         />
-        <Stack.Screen 
-          name="GameSession" 
-          component={GameSessionScreen} 
-          options={{ headerShown: false, animation: 'slide_from_right' }}
+        <Stack.Screen
+          name="Settings"
+          component={SettingsScreen}
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
-        <Stack.Screen 
-          name="Settings" 
-          component={SettingsScreen} 
-          options={{ headerShown: false, presentation: 'modal', animation: 'slide_from_bottom' }}
-        />
-        <Stack.Screen 
-          name="SessionHistory" 
-          component={SessionHistoryScreen} 
-          options={{ headerShown: false, animation: 'slide_from_right' }}
+        <Stack.Screen
+          name="SessionHistory"
+          component={SessionHistoryScreen}
+          options={{ animation: 'slide_from_right' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

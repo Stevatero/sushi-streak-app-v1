@@ -1,0 +1,47 @@
+version: 2
+updates:
+  # Backend: aggiornamenti minor/patch raggruppati settimanalmente
+  - package-ecosystem: npm
+    directory: /sushi-game-backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, backend]
+
+  # App: le versioni di Expo/React Native vanno aggiornate insieme con `npx expo install --fix`
+  # (upgrade dell'SDK), quindi sono escluse dagli aggiornamenti automatici
+  - package-ecosystem: npm
+    directory: /sushi-game-app
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      app-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: 'expo'
+      - dependency-name: 'expo-*'
+      - dependency-name: '@expo/*'
+      - dependency-name: 'react'
+      - dependency-name: 'react-dom'
+      - dependency-name: 'react-native'
+      - dependency-name: 'react-native-*'
+      - dependency-name: '@react-native/*'
+      - dependency-name: '@react-native-async-storage/async-storage'
+      - dependency-name: 'react-test-renderer'
+      - dependency-name: '@types/react'
+      - dependency-name: 'jest'
+      - dependency-name: 'jest-expo'
+      - dependency-name: 'typescript'
+    labels: [dependencies, app]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies, ci]

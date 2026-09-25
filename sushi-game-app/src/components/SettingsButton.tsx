@@ -1,15 +1,11 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { IconButton, useTheme } from 'react-native-paper';
-import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { useColorScheme } from '../theme/ThemeProvider';
 
-type RootStackParamList = {
-  Settings: undefined;
-};
-
 const SettingsButton = () => {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const navigation = useNavigation();
   const theme = useTheme();
   const { isDarkMode } = useColorScheme();
 
@@ -17,18 +13,17 @@ const SettingsButton = () => {
     <View style={styles.container}>
       <IconButton
         icon="cog"
+        accessibilityLabel="Impostazioni"
         size={30}
         iconColor={theme.colors.primary}
         onPress={() => navigation.navigate('Settings')}
         style={[
           styles.button,
           {
-            backgroundColor: isDarkMode 
-              ? 'rgba(255, 255, 255, 0.2)' 
-              : 'rgba(255, 255, 255, 0.8)',
+            backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.8)',
             borderWidth: 1,
             borderColor: theme.colors.outline,
-          }
+          },
         ]}
       />
     </View>
@@ -36,9 +31,7 @@ const SettingsButton = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    // Rimuovo il posizionamento assoluto per permettere il posizionamento relativo
-  },
+  container: {},
   button: {
     borderRadius: 30,
     elevation: 8,

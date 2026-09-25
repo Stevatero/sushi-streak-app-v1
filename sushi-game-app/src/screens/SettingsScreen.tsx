@@ -1,111 +1,86 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Switch, Alert, BackHandler, Modal, TouchableOpacity, ScrollView, Share } from 'react-native';
-import { useTheme, Button, IconButton, Divider } from 'react-native-paper';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Switch, Modal, TouchableOpacity, ScrollView, Alert, Linking } from 'react-native';
+import { useTheme, Button, IconButton, Divider, SegmentedButtons, Snackbar } from 'react-native-paper';
+import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useShallow } from 'zustand/react/shallow';
 import { useColorScheme } from '../theme/ThemeProvider';
 import SoundManager from '../utils/SoundManager';
 import useGameStore from '../store/gameStore';
-import shareService from '../services/shareService';
+import { shareService } from '../services/shareService';
+import { preferences, ThemePreference } from '../services/preferences';
+import { APP_VARIANT, APP_VERSION, PRIVACY_POLICY_URL } from '../config';
+import { logger } from '../utils/logger';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
   const theme = useTheme();
-  const { isDarkMode, toggleTheme } = useColorScheme();
+  const insets = useSafeAreaInsets();
+  const { isDarkMode, preference, setPreference } = useColorScheme();
   const [soundEnabled, setSoundEnabled] = useState(SoundManager.isSoundEnabled());
   const [creditsVisible, setCreditsVisible] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
-  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
-  
-  // Ottieni i dati della sessione dal game store
-  const { sessionId, sessionName, gameEnded } = useGameStore();
-  
-  // Calcola se sono passati più di 10 minuti dall'inizio della sessione
-  const isSessionExpired = sessionStartTime ? 
-    (Date.now() - sessionStartTime.getTime()) > 10 * 60 * 1000 : false;
-  
-  // Determina se la condivisione è disponibile
-  const canShare = sessionId && !gameEnded && !isSessionExpired;
+  const [snackbar, setSnackbar] = useState('');
 
-  useEffect(() => {
-    // Imposta il tempo di inizio sessione quando il componente viene montato
-    if (sessionId && !sessionStartTime) {
-      setSessionStartTime(new Date());
-    }
-  }, [sessionId]);
-
-  // Gestione del pulsante indietro del telefono
-  useFocusEffect(
-    React.useCallback(() => {
-      const onBackPress = () => {
-        // Se il modale dei credits è aperto, chiudilo
-        if (creditsVisible) {
-          setCreditsVisible(false);
-          return true; // Previene il comportamento di default
-        }
-        
-        // Verifica se possiamo tornare indietro nello stack di navigazione
-        if (navigation.canGoBack()) {
-          navigation.goBack();
-          return true; // Previene il comportamento di default
-        }
-        
-        // Se non possiamo tornare indietro, lascia che l'app gestisca il comportamento di default
-        return false; // Permette il comportamento di default (chiusura app)
-      };
-
-      const backHandler = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-
-      return () => backHandler.remove();
-    }, [navigation, creditsVisible])
+  const { sessionId, sessionName, gameEnded, status } = useGameStore(
+    useShallow((s) => ({
+      sessionId: s.sessionId,
+      sessionName: s.sessionName,
+      gameEnded: s.gameEnded,
+      status: s.status,
+    }))
   );
+
+  // La condivisione è disponibile finché il server considera la sessione attiva
+  const canShare = !!sessionId && !gameEnded && status === 'active';
 
   const copySessionCode = async () => {
     if (!sessionId) return;
-    
-    try {
-      await shareService.copySessionCode(sessionId);
-      Alert.alert('Successo', 'Codice sessione copiato negli appunti!');
-    } catch (error) {
-      console.error('Errore durante la copia:', error);
-      Alert.alert('Errore', 'Impossibile copiare il codice');
-    }
+    const success = await shareService.copySessionCode(sessionId);
     setShowShareModal(false);
+    setSnackbar(success ? 'Codice sessione copiato!' : 'Impossibile copiare il codice');
   };
 
   const shareSessionLink = async () => {
     if (!sessionId || !sessionName) return;
-    
-    try {
-      const shareUrl = shareService.generateShareLink(sessionId);
-      await Share.share({
-        message: `🍣 Unisciti alla mia sessione Sushi Streak!\n\nNome sessione: ${sessionName}\n\nLink diretto: ${shareUrl}`,
-        title: 'Invito Sushi Streak',
-        url: shareUrl
-      });
-    } catch (error) {
-      console.error('Errore durante la condivisione:', error);
-      Alert.alert('Errore', 'Impossibile condividere il link');
-    }
+    const result = await shareService.shareSession(sessionId, sessionName);
     setShowShareModal(false);
+    if (result === 'error') setSnackbar('Impossibile condividere il link');
   };
 
-  const shareSession = async () => {
-    if (!sessionId || !sessionName) {
-      Alert.alert('Errore', 'Nessuna sessione attiva da condividere');
-      return;
+  const openPrivacyPolicy = async () => {
+    try {
+      await Linking.openURL(PRIVACY_POLICY_URL);
+    } catch (error) {
+      logger.warn('Apertura informativa privacy non riuscita', error);
+      setSnackbar('Impossibile aprire la pagina');
     }
+  };
 
-    if (gameEnded) {
-      Alert.alert('Sessione terminata', 'Non puoi condividere una sessione già terminata');
-      return;
-    }
-
-    if (isSessionExpired) {
-      Alert.alert('Sessione scaduta', 'Non è più possibile condividere questa sessione. Sono passati più di 10 minuti.');
-      return;
-    }
-
-    setShowShareModal(true);
+  const confirmClearLocalData = () => {
+    Alert.alert(
+      'Cancellare i dati locali?',
+      "Verranno eliminati da questo dispositivo lo storico delle partite, il nome salvato e le preferenze. L'operazione non si può annullare.",
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: 'Cancella',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await preferences.clearAllLocalData();
+              setPreference('system');
+              SoundManager.setSoundEnabled(true);
+              setSoundEnabled(true);
+              setSnackbar('Dati locali cancellati');
+            } catch (error) {
+              logger.error('Cancellazione dati locali non riuscita', error);
+              setSnackbar('Impossibile cancellare i dati');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const toggleSound = () => {
@@ -115,30 +90,29 @@ const SettingsScreen = () => {
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <Text style={[styles.title, { color: theme.colors.primary }]}>Settings</Text>
+    <ScrollView
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 40 + insets.bottom }}
+    >
+      <Text style={[styles.title, { color: theme.colors.primary }]}>Impostazioni</Text>
 
-      {/* Appearance Section */}
+      {/* Aspetto */}
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>Aspetto</Text>
-        <View style={styles.settingRow}>
-          <Text style={{ color: theme.colors.onSurface, fontSize: 16 }}>{isDarkMode ? 'Tema Scuro' : 'Tema Chiaro'}</Text>
-          <View style={styles.switchContainer}>
-            <Text style={styles.switchLabel}>{isDarkMode ? '🌙' : '☀️'}</Text>
-            <Switch
-              value={isDarkMode}
-              onValueChange={toggleTheme}
-              style={styles.switch}
-              ios_backgroundColor={theme.colors.surface}
-              trackColor={{ false: '#767577', true: theme.colors.primaryContainer }}
-            />
-          </View>
-        </View>
+        <SegmentedButtons
+          value={preference}
+          onValueChange={(value) => setPreference(value as ThemePreference)}
+          buttons={[
+            { value: 'system', label: 'Sistema', icon: 'theme-light-dark' },
+            { value: 'light', label: 'Chiaro', icon: 'white-balance-sunny' },
+            { value: 'dark', label: 'Scuro', icon: 'weather-night' },
+          ]}
+        />
       </View>
 
       <Divider style={styles.divider} />
 
-      {/* Audio Section */}
+      {/* Audio */}
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>Audio</Text>
         <View style={styles.settingRow}>
@@ -158,7 +132,7 @@ const SettingsScreen = () => {
 
       <Divider style={styles.divider} />
 
-      {/* Condivisione Sessione - Solo se c'è una sessione attiva */}
+      {/* Condivisione sessione, solo se c'è una partita in corso */}
       {sessionId && (
         <>
           <View style={styles.section}>
@@ -166,29 +140,31 @@ const SettingsScreen = () => {
             <View style={styles.shareContainer}>
               <View style={styles.shareInfo}>
                 <Text style={{ color: theme.colors.onSurface, fontSize: 14, opacity: 0.7 }}>
-                  Sessione attiva: {sessionName}
+                  Sessione attiva: {sessionName} ({sessionId})
                 </Text>
-              
               </View>
               <IconButton
                 icon="share-variant"
                 size={24}
+                accessibilityLabel="Condividi la sessione"
                 iconColor={canShare ? theme.colors.primary : theme.colors.onSurfaceDisabled}
-                onPress={canShare ? shareSession : undefined}
+                onPress={() => setShowShareModal(true)}
                 style={[
                   styles.shareButton,
                   {
-                    backgroundColor: canShare 
-                      ? (isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)')
+                    backgroundColor: canShare
+                      ? isDarkMode
+                        ? 'rgba(255, 255, 255, 0.1)'
+                        : 'rgba(0, 0, 0, 0.05)'
                       : 'rgba(128, 128, 128, 0.1)',
-                  }
+                  },
                 ]}
                 disabled={!canShare}
               />
             </View>
             {!canShare && (
               <Text style={[styles.shareDisabledText, { color: theme.colors.onSurfaceDisabled }]}>
-                {gameEnded ? 'Sessione terminata' : isSessionExpired ? 'Sessione scaduta (>10 min)' : 'Condivisione non disponibile'}
+                {gameEnded ? 'Sessione terminata' : 'Condivisione non disponibile'}
               </Text>
             )}
           </View>
@@ -197,7 +173,26 @@ const SettingsScreen = () => {
         </>
       )}
 
-      {/* Info Section */}
+      {/* Privacy */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>Privacy</Text>
+        <Button
+          mode="outlined"
+          icon="shield-account"
+          onPress={openPrivacyPolicy}
+          style={[styles.privacyButton, { borderColor: theme.colors.primary }]}
+          textColor={theme.colors.primary}
+        >
+          Informativa sulla privacy
+        </Button>
+        <Button mode="text" icon="delete-outline" onPress={confirmClearLocalData} textColor={theme.colors.error}>
+          Cancella dati locali
+        </Button>
+      </View>
+
+      <Divider style={styles.divider} />
+
+      {/* Info */}
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>Info</Text>
         <Button
@@ -206,30 +201,41 @@ const SettingsScreen = () => {
           style={{ borderColor: theme.colors.primary }}
           textColor={theme.colors.primary}
         >
-          Credits
+          Crediti
         </Button>
 
         <Modal
           visible={creditsVisible}
           animationType="slide"
-          transparent={true}
+          transparent
           onRequestClose={() => setCreditsVisible(false)}
         >
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
-              <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>Credits</Text>
+              <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>Crediti</Text>
               <ScrollView contentContainerStyle={styles.modalScrollContent}>
                 <Text style={[styles.modalItemTitle, { color: theme.colors.onSurface }]}>Sushi Streak</Text>
-                <Text style={[styles.modalItemDescription, { color: theme.colors.onSurfaceVariant }]}>Version 1.0.0</Text>
+                <Text style={[styles.modalItemDescription, { color: theme.colors.onSurfaceVariant }]}>
+                  Versione {APP_VERSION}
+                  {APP_VARIANT !== 'production' ? ` (${APP_VARIANT})` : ''}
+                </Text>
 
-                <Text style={[styles.modalItemTitle, { color: theme.colors.onSurface }]}>Developed by</Text>
-                <Text style={[styles.modalItemDescription, { color: theme.colors.onSurfaceVariant }]}>Dario Stevanato</Text>
+                <Text style={[styles.modalItemTitle, { color: theme.colors.onSurface }]}>Sviluppato da</Text>
+                <Text style={[styles.modalItemDescription, { color: theme.colors.onSurfaceVariant }]}>
+                  Dario Stevanato
+                </Text>
 
-                <Text style={[styles.modalItemTitle, { color: theme.colors.onSurface }]}>Technologies</Text>
-                <Text style={[styles.modalItemDescription, { color: theme.colors.onSurfaceVariant }]}>React Native, Expo, Socket.IO</Text>
+                <Text style={[styles.modalItemTitle, { color: theme.colors.onSurface }]}>Tecnologie</Text>
+                <Text style={[styles.modalItemDescription, { color: theme.colors.onSurfaceVariant }]}>
+                  React Native, Expo, Socket.IO
+                </Text>
 
-                <Text style={[styles.modalItemTitle, { color: theme.colors.onSurface }]}>© 2025</Text>
-                <Text style={[styles.modalItemDescription, { color: theme.colors.onSurfaceVariant }]}>All rights reserved</Text>
+                <Text style={[styles.modalItemTitle, { color: theme.colors.onSurface }]}>
+                  © {new Date().getFullYear()}
+                </Text>
+                <Text style={[styles.modalItemDescription, { color: theme.colors.onSurfaceVariant }]}>
+                  Tutti i diritti riservati
+                </Text>
               </ScrollView>
 
               <Button
@@ -238,72 +244,65 @@ const SettingsScreen = () => {
                 style={[styles.button, { backgroundColor: theme.colors.primary, alignSelf: 'center' }]}
                 labelStyle={{ color: theme.colors.onPrimary }}
               >
-                Close
+                Chiudi
               </Button>
             </View>
           </View>
         </Modal>
       </View>
 
-      {/* Save Button */}
       <Button
         mode="contained"
         onPress={() => navigation.goBack()}
         style={[styles.button, { backgroundColor: theme.colors.primary, alignSelf: 'center' }]}
         labelStyle={{ color: theme.colors.onPrimary }}
       >
-        Salva
+        Chiudi
       </Button>
 
-      {/* Modale di condivisione personalizzato */}
-      <Modal
-        visible={showShareModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowShareModal(false)}
-      >
+      {/* Modale di condivisione */}
+      <Modal visible={showShareModal} animationType="slide" transparent onRequestClose={() => setShowShareModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.shareModalContent, { backgroundColor: theme.colors.surface }]}>
-            <Text style={[styles.shareModalTitle, { color: theme.colors.primary }]}>
-              Condividi Sessione
-            </Text>
-            
+            <Text style={[styles.shareModalTitle, { color: theme.colors.primary }]}>Condividi Sessione</Text>
+
             <View style={styles.shareModalButtons}>
               <TouchableOpacity
                 style={[styles.shareModalButton, { backgroundColor: theme.colors.primary }]}
                 onPress={copySessionCode}
               >
-                <Text style={[styles.shareModalButtonText, { color: theme.colors.onPrimary }]}>
-                  Copia Codice
-                </Text>
+                <Text style={[styles.shareModalButtonText, { color: theme.colors.onPrimary }]}>Copia Codice</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={[styles.shareModalButton, { backgroundColor: theme.colors.primary }]}
                 onPress={shareSessionLink}
               >
-                <Text style={[styles.shareModalButtonText, { color: theme.colors.onPrimary }]}>
-                  Condividi Link
-                </Text>
+                <Text style={[styles.shareModalButtonText, { color: theme.colors.onPrimary }]}>Condividi Link</Text>
               </TouchableOpacity>
             </View>
-            
+
             <TouchableOpacity
               style={[styles.shareModalCancelButton, { borderColor: theme.colors.outline }]}
               onPress={() => setShowShareModal(false)}
             >
-              <Text style={[styles.shareModalCancelText, { color: theme.colors.onSurfaceVariant }]}>
-                Annulla
-              </Text>
+              <Text style={[styles.shareModalCancelText, { color: theme.colors.onSurfaceVariant }]}>Annulla</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      <Snackbar visible={!!snackbar} onDismiss={() => setSnackbar('')} duration={2500}>
+        {snackbar}
+      </Snackbar>
     </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
+  privacyButton: {
+    marginBottom: 4,
+  },
   container: {
     flex: 1,
     padding: 20,

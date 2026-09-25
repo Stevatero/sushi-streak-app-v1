@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity, Modal, Alert } from 'react-native';
 import { Text, Button, Card, useTheme, IconButton } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
-import { useColorScheme } from '../theme/ThemeProvider';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SessionStorageService, SavedSession } from '../services/sessionStorage';
 
 const SessionHistoryScreen = () => {
   const navigation = useNavigation();
   const theme = useTheme();
-  const { isDarkMode } = useColorScheme();
+  const insets = useSafeAreaInsets();
   const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<SavedSession | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -22,7 +22,7 @@ const SessionHistoryScreen = () => {
     try {
       const sessions = await SessionStorageService.getSavedSessions();
       setSavedSessions(sessions);
-    } catch (error) {
+    } catch {
       Alert.alert('Errore', 'Impossibile caricare le sessioni salvate');
     } finally {
       setLoading(false);
@@ -30,25 +30,21 @@ const SessionHistoryScreen = () => {
   };
 
   const deleteSession = async (sessionId: string) => {
-    Alert.alert(
-      'Elimina Sessione',
-      'Sei sicuro di voler eliminare questa sessione?',
-      [
-        { text: 'Annulla', style: 'cancel' },
-        {
-          text: 'Elimina',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await SessionStorageService.deleteSession(sessionId);
-              await loadSavedSessions();
-            } catch (error) {
-              Alert.alert('Errore', 'Impossibile eliminare la sessione');
-            }
+    Alert.alert('Elimina Sessione', 'Sei sicuro di voler eliminare questa sessione?', [
+      { text: 'Annulla', style: 'cancel' },
+      {
+        text: 'Elimina',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await SessionStorageService.deleteSession(sessionId);
+            await loadSavedSessions();
+          } catch {
+            Alert.alert('Errore', 'Impossibile eliminare la sessione');
           }
-        }
-      ]
-    );
+        },
+      },
+    ]);
   };
 
   const openSessionDetail = (session: SavedSession) => {
@@ -62,34 +58,32 @@ const SessionHistoryScreen = () => {
         <Card.Content>
           <View style={styles.sessionHeader}>
             <View style={styles.sessionInfo}>
-              <Text style={[styles.sessionName, { color: theme.colors.primary }]}>
-                {item.sessionName}
-              </Text>
+              <Text style={[styles.sessionName, { color: theme.colors.primary }]}>{item.sessionName}</Text>
               <Text style={[styles.sessionDate, { color: theme.colors.onSurfaceVariant }]}>
-                {item.date}
+                {SessionStorageService.formatDate(item.date)}
+                {item.duration ? ` · ${item.duration}` : ''}
               </Text>
-              <Text style={[styles.restaurantName, { color: theme.colors.secondary }]}>
-                📍 {item.restaurant}
-              </Text>
+              {item.restaurant ? (
+                <Text style={[styles.restaurantName, { color: theme.colors.secondary }]}>📍 {item.restaurant}</Text>
+              ) : null}
             </View>
             <IconButton
               icon="delete"
+              accessibilityLabel="Elimina partita"
               size={20}
               iconColor={theme.colors.error}
               onPress={() => deleteSession(item.id)}
               style={styles.deleteButton}
             />
           </View>
-          
+
           <View style={styles.winnerInfo}>
-            <Text style={[styles.winnerLabel, { color: theme.colors.onSurfaceVariant }]}>
-              Vincitore:
-            </Text>
+            <Text style={[styles.winnerLabel, { color: theme.colors.onSurfaceVariant }]}>Vincitore:</Text>
             <Text style={[styles.winnerText, { color: theme.colors.onSurface }]}>
               🏆 {item.winner.name} ({item.winner.score} pezzi)
             </Text>
           </View>
-          
+
           <Text style={[styles.playersCount, { color: theme.colors.onSurfaceVariant }]}>
             {item.players.length} giocatori
           </Text>
@@ -99,31 +93,31 @@ const SessionHistoryScreen = () => {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: theme.colors.background, paddingTop: insets.top + 10, paddingBottom: insets.bottom },
+      ]}
+    >
       <View style={styles.header}>
         <IconButton
           icon="arrow-left"
+          accessibilityLabel="Indietro"
           size={24}
           iconColor={theme.colors.primary}
           onPress={() => navigation.goBack()}
           style={styles.backButton}
         />
-        <Text style={[styles.title, { color: theme.colors.primary }]}>
-          📚 Storico Partite
-        </Text>
+        <Text style={[styles.title, { color: theme.colors.primary }]}>📚 Storico Partite</Text>
       </View>
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <Text style={[styles.loadingText, { color: theme.colors.onSurface }]}>
-            Caricamento...
-          </Text>
+          <Text style={[styles.loadingText, { color: theme.colors.onSurface }]}>Caricamento...</Text>
         </View>
       ) : savedSessions.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>
-            Nessuna partita salvata
-          </Text>
+          <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>Nessuna partita salvata</Text>
           <Text style={[styles.emptySubtext, { color: theme.colors.onSurfaceVariant }]}>
             Le partite che salverai appariranno qui
           </Text>
@@ -149,50 +143,37 @@ const SessionHistoryScreen = () => {
           <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
             {selectedSession && (
               <>
-                <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>
-                  {selectedSession.sessionName}
-                </Text>
-                
+                <Text style={[styles.modalTitle, { color: theme.colors.primary }]}>{selectedSession.sessionName}</Text>
+
                 <View style={styles.sessionDetails}>
                   <Text style={[styles.detailLabel, { color: theme.colors.onSurfaceVariant }]}>
-                    📍 Ristorante: {selectedSession.restaurant}
+                    📍 Ristorante: {selectedSession.restaurant || 'non indicato'}
                   </Text>
                   <Text style={[styles.detailLabel, { color: theme.colors.onSurfaceVariant }]}>
-                    📅 Data: {selectedSession.date}
+                    📅 Data: {SessionStorageService.formatDate(selectedSession.date)}
+                    {selectedSession.duration ? ` (${selectedSession.duration})` : ''}
                   </Text>
                   <Text style={[styles.detailLabel, { color: theme.colors.onSurfaceVariant }]}>
                     🏆 Vincitore: {selectedSession.winner.name} ({selectedSession.winner.score} pezzi)
                   </Text>
                 </View>
 
-                <Text style={[styles.leaderboardTitle, { color: theme.colors.primary }]}>
-                  🏆 Classifica Finale
-                </Text>
-                
+                <Text style={[styles.leaderboardTitle, { color: theme.colors.primary }]}>🏆 Classifica Finale</Text>
+
                 <FlatList
                   data={selectedSession.players}
                   keyExtractor={(item) => item.id}
                   renderItem={({ item, index }) => (
                     <View style={[styles.playerRow, { borderBottomColor: theme.colors.outline }]}>
-                      <Text style={[styles.playerRank, { color: theme.colors.primary }]}>
-                        {index + 1}°
-                      </Text>
-                      <Text style={[styles.playerName, { color: theme.colors.onSurface }]}>
-                        {item.name}
-                      </Text>
-                      <Text style={[styles.playerScore, { color: theme.colors.secondary }]}>
-                        {item.score}  🍣
-                      </Text>
+                      <Text style={[styles.playerRank, { color: theme.colors.primary }]}>{index + 1}°</Text>
+                      <Text style={[styles.playerName, { color: theme.colors.onSurface }]}>{item.name}</Text>
+                      <Text style={[styles.playerScore, { color: theme.colors.secondary }]}>{item.score} 🍣</Text>
                     </View>
                   )}
                   style={styles.leaderboardList}
                 />
-                
-                <Button 
-                  mode="contained" 
-                  onPress={() => setShowDetailModal(false)}
-                  style={styles.closeButton}
-                >
+
+                <Button mode="contained" onPress={() => setShowDetailModal(false)} style={styles.closeButton}>
                   Chiudi
                 </Button>
               </>
@@ -207,7 +188,6 @@ const SessionHistoryScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 50,
   },
   header: {
     flexDirection: 'row',

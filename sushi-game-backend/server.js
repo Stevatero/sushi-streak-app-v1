@@ -1,840 +1,683 @@
-const express = require('express');
+const path = require('path');
 const http = require('http');
-const { Server } = require('socket.io');
+const crypto = require('crypto');
+const express = require('express');
 const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
-const { v4: uuidv4 } = require('uuid');
+const helmet = require('helmet');
+const { Server } = require('socket.io');
+const { openDatabase, migrate } = require('./db');
+const { renderJoinPage, renderNotFoundPage } = require('./joinPage');
+const { renderPrivacyPage } = require('./privacyPage');
+const logger = require('./logger');
+const { version: SERVICE_VERSION } = require('./package.json');
 
-// Inizializzazione app Express
-const app = express();
-app.use(cors({
-  origin: ['http://localhost:8081', 'http://localhost:8082', 'http://127.0.0.1:8081', 'http://127.0.0.1:8082', 'exp://127.0.0.1:8081', 'exp://127.0.0.1:8082', 'http://10.0.2.2:8081', 'http://10.0.2.2:8082', 'exp://10.0.2.2:8081', 'exp://10.0.2.2:8082', 'http://192.168.26.103:8081', 'http://192.168.26.103:8082', 'exp://192.168.26.103:8081', 'exp://192.168.26.103:8082', 'http://sushi.dietalab.net', 'https://sushi.dietalab.net', 'http://57.131.31.119'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-}));
-app.use(express.json());
+const DEFAULT_CORS_ORIGINS = [
+  'http://localhost:8081',
+  'http://localhost:8082',
+  'http://localhost:19006',
+  'https://sushi.dietalab.net',
+];
 
-// Creazione server HTTP
-const server = http.createServer(app);
+const DEFAULT_CONFIG = {
+  port: Number(process.env.PORT) || 3000,
+  dbPath: process.env.DB_PATH || path.join(__dirname, 'sushi_game.db'),
+  // Dopo quanto tempo senza attività una sessione viene chiusa (default 3 ore)
+  inactivityMs: (Number(process.env.SESSION_INACTIVITY_MIN) || 180) * 60 * 1000,
+  // Per quanto tempo si conservano le sessioni chiuse prima di cancellarle (default 30 giorni)
+  retentionMs: (Number(process.env.SESSION_RETENTION_DAYS) || 30) * 24 * 60 * 60 * 1000,
+  sweepIntervalMs: 60 * 1000,
+  maxPlayersPerSession: 30,
+  corsOrigins: process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',')
+        .map((o) => o.trim())
+        .filter(Boolean)
+    : DEFAULT_CORS_ORIGINS,
+  trustProxy: process.env.TRUST_PROXY || 'loopback',
+  androidPackage: process.env.ANDROID_PACKAGE || 'com.stevatero.sushistreakapp',
+  // Contatto mostrato nell'informativa privacy (email o URL)
+  privacyContact: process.env.PRIVACY_CONTACT || 'https://github.com/Stevatero/sushi-streak-game/issues',
+  androidCertFingerprints: (process.env.ANDROID_CERT_SHA256 || '')
+    .split(',')
+    .map((f) => f.trim())
+    .filter(Boolean),
+};
 
-// Inizializzazione Socket.IO
-const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
+const SESSION_ID_RE = /^[A-Z0-9-]{3,20}$/;
+const MAX_PLAYER_NAME_LENGTH = 20;
+const MAX_SCORE = 999;
+// Limite di frequenza per add/remove piece: massimo N eventi per finestra
+const PIECE_RATE_LIMIT = { max: 6, windowMs: 1000 };
+
+class ApiError extends Error {
+  constructor(status, message, code) {
+    super(message);
+    this.status = status;
+    this.code = code;
   }
-});
-
-// Inizializzazione database SQLite
-const db = new sqlite3.Database('./sushi_game.db');
-
-// Creazione tabelle
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS players (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    score INTEGER DEFAULT 0,
-    finished BOOLEAN DEFAULT 0,
-    FOREIGN KEY (session_id) REFERENCES sessions (id)
-  )`);
-});
-
-// Funzione per generare un codice sessione alfanumerico
-function generateSessionCode() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
 }
 
-// Funzione per verificare se un codice sessione esiste già
-function checkSessionExists(sessionId) {
-  return new Promise((resolve, reject) => {
-    db.get('SELECT id FROM sessions WHERE id = ?', [sessionId], (err, row) => {
-      if (err) reject(err);
-      else resolve(!!row);
-    });
-  });
+function normalizeSessionId(value) {
+  return typeof value === 'string' ? value.trim().toUpperCase() : '';
 }
 
-// Funzione per generare un codice sessione unico
-async function generateUniqueSessionCode() {
-  let sessionCode;
-  let exists = true;
-  let attempts = 0;
-  const maxAttempts = 10;
-
-  while (exists && attempts < maxAttempts) {
-    sessionCode = generateSessionCode();
-    exists = await checkSessionExists(sessionCode);
-    attempts++;
-  }
-
-  if (attempts >= maxAttempts) {
-    throw new Error('Impossibile generare un codice sessione unico');
-  }
-
-  return sessionCode;
+function normalizePlayerName(value) {
+  if (typeof value !== 'string') return '';
+  return (
+    value
+      // eslint-disable-next-line no-control-regex -- rimozione intenzionale dei caratteri di controllo
+      .replace(/[\u0000-\u001f\u007f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 }
 
-// Dati in memoria per gestire le sessioni attive
-const activeSessions = {};
-
-// Endpoint di health check
-app.get('/', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    message: 'Sushi Streak Server is running!',
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    service: 'sushi-streak-backend',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// API Routes
-app.post('/api/sessions', async (req, res) => {
-  const { sessionName, playerName } = req.body;
-  
-  try {
-    // Validazione input
-    if (!sessionName || !playerName) {
-      return res.status(400).json({ error: 'sessionName e playerName sono richiesti' });
-    }
-
-    // Usa il nome della sessione come ID unico (convertito in maiuscolo per consistenza)
-    const sessionId = sessionName.toUpperCase().trim();
-    const playerId = uuidv4();
-
-    // Verifica se esiste già una sessione con questo nome
-    db.get('SELECT id FROM sessions WHERE id = ?', [sessionId], (err, existingSession) => {
-      if (err) {
-        console.error('Errore verifica sessione:', err);
-        return res.status(500).json({ error: 'Errore del database: ' + err.message });
-      }
-
-      if (existingSession) {
-        return res.status(409).json({ error: 'Esiste già una sessione con questo nome. Scegli un nome diverso.' });
-      }
-
-      db.run('INSERT INTO sessions (id, name) VALUES (?, ?)', [sessionId, sessionName], (err) => {
-        if (err) {
-          console.error('Errore inserimento sessione:', err);
-          return res.status(500).json({ error: 'Errore del database: ' + err.message });
-        }
-
-        db.run('INSERT INTO players (id, name, session_id) VALUES (?, ?, ?)', 
-          [playerId, playerName, sessionId], (err) => {
-            if (err) {
-              console.error('Errore inserimento giocatore:', err);
-              return res.status(500).json({ error: 'Errore inserimento giocatore: ' + err.message });
-            }
-
-            // Inizializza la sessione in memoria
-            activeSessions[sessionId] = {
-              id: sessionId,
-              name: sessionName,
-              players: [{
-                id: playerId,
-                name: playerName,
-                score: 0,
-                finished: false
-              }],
-              lastActivity: Date.now()
-            };
-
-            res.status(201).json({ 
-              sessionId, 
-              playerId,
-              sessionName
-            });
-          });
-      });
-    });
-  } catch (error) {
-    console.error('Errore generale:', error);
-    res.status(500).json({ error: error.message });
+function validateSessionId(sessionId) {
+  if (!SESSION_ID_RE.test(sessionId)) {
+    throw new ApiError(
+      400,
+      'Il codice sessione deve avere 3-20 caratteri tra lettere, numeri e trattino',
+      'invalid_session_id'
+    );
   }
-});
+}
 
-app.post('/api/sessions/join', (req, res) => {
-  const { sessionId, playerName } = req.body;
-  const normalizedSessionId = String(sessionId || '').toUpperCase().trim();
-  const normalizedName = String(playerName || '').trim();
-  const newPlayerId = uuidv4();
-
-  // Validazione input
-  if (!normalizedSessionId || !normalizedName) {
-    return res.status(400).json({ error: 'sessionId e playerName sono richiesti' });
+function validatePlayerName(name) {
+  const length = [...name].length;
+  if (length < 1 || length > MAX_PLAYER_NAME_LENGTH) {
+    throw new ApiError(400, `Il nome deve avere tra 1 e ${MAX_PLAYER_NAME_LENGTH} caratteri`, 'invalid_player_name');
   }
+}
 
-  // Verifica se la sessione esiste
-  db.get('SELECT * FROM sessions WHERE id = ?', [normalizedSessionId], (err, session) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (!session) return res.status(404).json({ error: 'Sessione non trovata' });
+function hashToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
 
-    const now = new Date();
-    const EXP_MIN = 10;
-    if (activeSessions[normalizedSessionId] && typeof activeSessions[normalizedSessionId].lastActivity === 'number') {
-      const diffMin = (Date.now() - activeSessions[normalizedSessionId].lastActivity) / (1000 * 60);
-      if (diffMin > EXP_MIN) {
-        return res.status(403).json({ error: 'Non è più possibile unirsi a questa sessione. Sono passati più di 10 minuti di inattività.' });
-      }
+function tokenMatches(token, storedHash) {
+  if (typeof token !== 'string' || !token || typeof storedHash !== 'string' || !storedHash) return false;
+  const a = Buffer.from(hashToken(token), 'hex');
+  const b = Buffer.from(storedHash, 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Limitatore di richieste in memoria per IP (sufficiente per un'istanza singola)
+function createRateLimiter({ max, windowMs }) {
+  const hits = new Map();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of hits) {
+      if (now - entry.start > windowMs) hits.delete(key);
     }
-    // Verifica se sono passati più di 10 minuti dalla creazione della sessione
-    const sessionCreatedAt = new Date(session.created_at + 'Z'); // Forza interpretazione UTC
-    const timeDifference = (now.getTime() - sessionCreatedAt.getTime()) / (1000 * 60);
+  }, windowMs).unref();
 
-    // Debug: log per capire il problema del timer
-    console.log('Debug Timer:');
-    console.log('- Session created_at (raw):', session.created_at);
-    console.log('- Session created_at (parsed UTC):', sessionCreatedAt);
-    console.log('- Current time:', now);
-    console.log('- Time difference (minutes):', timeDifference);
-    console.log('- Is expired (>10 min)?:', timeDifference > 10);
-
-    if (timeDifference > EXP_MIN) {
-      return res.status(403).json({ error: 'Non è più possibile unirsi a questa sessione. Sono passati più di 10 minuti dalla sua creazione.' });
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = req.ip;
+    const entry = hits.get(key);
+    if (!entry || now - entry.start > windowMs) {
+      hits.set(key, { start: now, count: 1 });
+      return next();
     }
-
-    // Controlla se esiste già un giocatore con lo stesso nome (case-insensitive)
-    db.get('SELECT * FROM players WHERE session_id = ? AND LOWER(name) = LOWER(?)', [normalizedSessionId, normalizedName], (err, existingPlayer) => {
-      if (err) return res.status(500).json({ error: err.message });
-
-      if (existingPlayer) {
-        // Blocca duplicati: il nome è già in uso nella sessione
-        return res.status(409).json({ error: 'Nome già in uso' });
-      }
-
-      // Nessun duplicato: inserisci nuovo giocatore
-      db.run('INSERT INTO players (id, name, session_id) VALUES (?, ?, ?)', 
-        [newPlayerId, normalizedName, normalizedSessionId], (err) => {
-          if (err) return res.status(500).json({ error: err.message });
-
-          // Aggiorna la sessione in memoria evitando duplicati di nome
-          if (activeSessions[normalizedSessionId]) {
-            const nameExists = activeSessions[normalizedSessionId].players.some(p => p.name.toLowerCase() === normalizedName.toLowerCase());
-            if (!nameExists) {
-              activeSessions[normalizedSessionId].players.push({
-                id: newPlayerId,
-                name: normalizedName,
-                score: 0,
-                finished: false
-              });
-            }
-            activeSessions[normalizedSessionId].lastActivity = Date.now();
-          } else {
-            // Carica i giocatori esistenti dal database
-            db.all('SELECT * FROM players WHERE session_id = ?', [normalizedSessionId], (err, players) => {
-              if (err) return res.status(500).json({ error: err.message });
-
-              activeSessions[normalizedSessionId] = {
-                id: normalizedSessionId,
-                name: session.name,
-                players: players.map(p => ({
-                  id: p.id,
-                  name: p.name,
-                  score: p.score,
-                  finished: p.finished === 1 || p.finished === true
-                })),
-                lastActivity: Date.now()
-              };
-            });
-          }
-
-          res.status(200).json({ 
-            sessionId: normalizedSessionId, 
-            playerId: newPlayerId,
-            sessionName: session.name
-          });
-        });
-    });
-  });
-});
-
-app.get('/api/sessions/:sessionId', (req, res) => {
-  const { sessionId } = req.params;
-
-  db.get('SELECT * FROM sessions WHERE id = ?', [sessionId], (err, session) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (!session) return res.status(404).json({ error: 'Sessione non trovata' });
-
-    db.all('SELECT * FROM players WHERE session_id = ?', [sessionId], (err, players) => {
-      if (err) return res.status(500).json({ error: err.message });
-
-      res.json({
-        id: session.id,
-        name: session.name,
-        created_at: session.created_at,
-        players: players.map(p => ({
-          id: p.id,
-          name: p.name,
-          score: p.score,
-          finished: p.finished === 1
-        }))
-      });
-    });
-  });
-});
-
-// Socket.IO events
-io.on('connection', (socket) => {
-  console.log('Nuovo client connesso:', socket.id);
-
-  // Unirsi a una sessione
-  socket.on('join_session', ({ sessionId, playerId, playerName }) => {
-    socket.join(sessionId);
-    console.log(`Giocatore ${playerId} (${playerName}) si è unito alla sessione ${sessionId}`);
-    
-    // Aggiungi il giocatore alla sessione se non esiste già
-    if (activeSessions[sessionId]) {
-      // Verifica se il giocatore esiste già (per id o per nome)
-      const playerExists = activeSessions[sessionId].players.some(p => p.id === playerId);
-      const nameExists = playerName 
-        ? activeSessions[sessionId].players.some(p => (p.name || '').toLowerCase() === playerName.toLowerCase())
-        : false;
-      
-      // Se il giocatore non esiste, aggiungilo
-      if (!playerExists && !nameExists && playerName) {
-        activeSessions[sessionId].players.push({
-          id: playerId,
-          name: playerName,
-          score: 0,
-          finished: false
-        });
-        
-        // Aggiorna il database
-        db.run('INSERT OR IGNORE INTO players (id, name, session_id) VALUES (?, ?, ?)', 
-          [playerId, playerName, sessionId]);
-      }
-      activeSessions[sessionId].lastActivity = Date.now();
-      
-      // Invia lo stato attuale della sessione a tutti i client nella stanza
-      io.to(sessionId).emit('session_update', activeSessions[sessionId]);
+    entry.count += 1;
+    if (entry.count > max) {
+      return res.status(429).json({ error: 'Troppe richieste, riprova tra poco', code: 'rate_limited' });
     }
-  });
-
-  // Aggiungere un pezzo di sushi
-  socket.on('add_piece', ({ sessionId, playerId }) => {
-    if (!activeSessions[sessionId]) return;
-
-    // Aggiorna il punteggio in memoria
-    const session = activeSessions[sessionId];
-    const player = session.players.find(p => p.id === playerId);
-    
-    if (player && !player.finished) {
-      player.score += 1;
-
-      // Aggiorna il database
-      db.run('UPDATE players SET score = ? WHERE id = ?', [player.score, playerId]);
-
-      activeSessions[sessionId].lastActivity = Date.now();
-      // Notifica tutti i client nella stanza
-      io.to(sessionId).emit('session_update', session);
-    }
-  });
-
-  // Segnalare che il giocatore ha finito
-  socket.on('player_finished', ({ sessionId, playerId }) => {
-    if (!activeSessions[sessionId]) return;
-
-    // Aggiorna lo stato in memoria
-    const session = activeSessions[sessionId];
-    const player = session.players.find(p => p.id === playerId);
-    
-    if (player) {
-      player.finished = true;
-
-      // Aggiorna il database
-      db.run('UPDATE players SET finished = 1 WHERE id = ?', [playerId]);
-
-      // Verifica se tutti i giocatori hanno finito
-      const allFinished = session.players.every(p => p.finished);
-      
-      activeSessions[sessionId].lastActivity = Date.now();
-      // Notifica tutti i client nella stanza
-      io.to(sessionId).emit('session_update', session);
-      
-      if (allFinished) {
-        io.to(sessionId).emit('game_ended', session);
-      }
-    }
-  });
-
-  // Disconnessione
-  socket.on('disconnect', () => {
-    console.log('Client disconnesso:', socket.id);
-  });
-});
-
-// Avvio del server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server in ascolto sulla porta ${PORT}`);
-});
-
-const EXP_MS = 10 * 60 * 1000;
-setInterval(() => {
-  const now = Date.now();
-  Object.keys(activeSessions).forEach((sid) => {
-    const s = activeSessions[sid];
-    if (!s || typeof s.lastActivity !== 'number') return;
-    if (now - s.lastActivity > EXP_MS) {
-      db.run('DELETE FROM players WHERE session_id = ?', [sid], () => {
-        db.run('DELETE FROM sessions WHERE id = ?', [sid], () => {});
-      });
-      delete activeSessions[sid];
-    }
-  });
-}, 60000);
-
-// Endpoint per ottenere informazioni di una sessione per la condivisione
-app.get('/api/sessions/:sessionId/info', (req, res) => {
-  const { sessionId } = req.params;
-  
-  // Controlla prima nelle sessioni attive
-  if (activeSessions[sessionId]) {
-    const session = activeSessions[sessionId];
-    const expired = typeof session.lastActivity === 'number' ? (Date.now() - session.lastActivity) > (10 * 60 * 1000) : false;
-    if (!expired) {
-      return res.json({
-        sessionId,
-        sessionName: session.name,
-        playersCount: session.players.length,
-        isActive: true,
-        players: session.players.map(p => ({
-          name: p.name,
-          score: p.score,
-          finished: p.finished
-        }))
-      });
-    }
-  }
-  
-  // Se non è attiva, controlla nel database
-  db.get('SELECT * FROM sessions WHERE id = ?', [sessionId], (err, session) => {
-    if (err) {
-      return res.status(500).json({ error: 'Errore del database' });
-    }
-    
-    if (!session) {
-      return res.status(404).json({ error: 'Sessione non trovata' });
-    }
-    
-    // Ottieni i giocatori della sessione
-    db.all('SELECT * FROM players WHERE session_id = ?', [sessionId], (err, players) => {
-      if (err) {
-        return res.status(500).json({ error: 'Errore del database' });
-      }
-      
-      res.json({
-        sessionId,
-        sessionName: session.name,
-        playersCount: players.length,
-        isActive: false,
-        players: players.map(p => ({
-          name: p.name,
-          score: p.score,
-          finished: p.finished
-        }))
-      });
-    });
-  });
-});
-
-// Pagina web per unirsi a una sessione
-app.get('/join/:sessionId', (req, res) => {
-  const { sessionId } = req.params;
-  
-  // Ottieni informazioni sulla sessione
-  const getSessionInfo = () => {
-    return new Promise((resolve, reject) => {
-      if (activeSessions[sessionId]) {
-        const session = activeSessions[sessionId];
-        const expired = typeof session.lastActivity === 'number' ? (Date.now() - session.lastActivity) > (10 * 60 * 1000) : false;
-        if (!expired) {
-          resolve({
-            sessionId,
-            sessionName: session.name,
-            playersCount: session.players.length,
-            isActive: true,
-            players: session.players
-          });
-          return;
-        }
-      } else {
-        db.get('SELECT * FROM sessions WHERE id = ?', [sessionId], (err, session) => {
-          if (err) return reject(err);
-          if (!session) return reject(new Error('Sessione non trovata'));
-          
-          db.all('SELECT * FROM players WHERE session_id = ?', [sessionId], (err, players) => {
-            if (err) return reject(err);
-            resolve({
-              sessionId,
-              sessionName: session.name,
-              playersCount: players.length,
-              isActive: false,
-              players
-            });
-          });
-        });
-        return;
-      }
-      db.get('SELECT * FROM sessions WHERE id = ?', [sessionId], (err, session) => {
-        if (err) return reject(err);
-        if (!session) return reject(new Error('Sessione non trovata'));
-        db.all('SELECT * FROM players WHERE session_id = ?', [sessionId], (err, players) => {
-          if (err) return reject(err);
-          resolve({
-            sessionId,
-            sessionName: session.name,
-            playersCount: players.length,
-            isActive: false,
-            players
-          });
-        });
-      });
-    });
+    return next();
   };
-  
-  getSessionInfo()
-    .then(sessionInfo => {
-      const html = `
-<!DOCTYPE html>
-<html lang="it">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🍣 Sushi Streak - Unisciti alla Sessione</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+}
+
+function createServer(options = {}) {
+  const config = { ...DEFAULT_CONFIG, ...options };
+  const db = openDatabase(config.dbPath);
+
+  // Sessioni attive in memoria: id -> { id, name, status, lastActivity, players: Map<id, player> }
+  const sessions = new Map();
+  const pendingLoads = new Map();
+
+  const expiresAt = (session) => session.lastActivity + config.inactivityMs;
+  const isExpired = (session) => Date.now() > expiresAt(session);
+  const isOpen = (session) => session.status === 'active' && !isExpired(session);
+
+  function publicSession(session) {
+    return {
+      id: session.id,
+      name: session.name,
+      status: isOpen(session) ? 'active' : session.status === 'active' ? 'expired' : session.status,
+      expiresAt: expiresAt(session),
+      players: [...session.players.values()].map((p) => ({
+        id: p.id,
+        name: p.name,
+        score: p.score,
+        finished: p.finished,
+      })),
+    };
+  }
+
+  // Informazioni pubbliche per la condivisione: nessun id dei giocatori
+  function shareInfo(session) {
+    const pub = publicSession(session);
+    return {
+      sessionId: session.id,
+      sessionName: session.name,
+      playersCount: session.players.size,
+      isActive: pub.status === 'active',
+      status: pub.status,
+      expiresAt: pub.expiresAt,
+      players: pub.players.map(({ name, score, finished }) => ({ name, score, finished })),
+    };
+  }
+
+  function logDbError(context) {
+    return (err) => logger.error('Errore database', { context, err });
+  }
+
+  async function closeSession(session, status) {
+    session.status = status;
+    sessions.delete(session.id);
+    await db.run('UPDATE sessions SET status = ?, ended_at = ? WHERE id = ?', [status, Date.now(), session.id]);
+  }
+
+  // Restituisce la sessione dalla memoria o la ricarica dal database (es. dopo un riavvio)
+  async function loadSession(sessionId) {
+    if (sessions.has(sessionId)) return sessions.get(sessionId);
+    if (pendingLoads.has(sessionId)) return pendingLoads.get(sessionId);
+
+    const load = (async () => {
+      const row = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
+      if (!row) return null;
+      const rows = await db.all('SELECT * FROM players WHERE session_id = ? ORDER BY joined_at, rowid', [sessionId]);
+      const session = {
+        id: row.id,
+        name: row.name,
+        status: row.status || 'active',
+        lastActivity: row.last_activity || 0,
+        players: new Map(
+          rows.map((p) => [
+            p.id,
+            { id: p.id, name: p.name, score: p.score || 0, finished: !!p.finished, tokenHash: p.token },
+          ])
+        ),
+      };
+      if (session.status === 'active') {
+        if (isExpired(session)) {
+          await closeSession(session, 'expired');
+        } else {
+          sessions.set(sessionId, session);
         }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        
-        .container {
-            background: white;
-            border-radius: 20px;
-            padding: 40px;
-            max-width: 500px;
-            width: 100%;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        
-        .sushi-icon {
-            font-size: 4rem;
-            margin-bottom: 20px;
-        }
-        
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 2rem;
-        }
-        
-        .session-info {
-            background: #f8f9fa;
-            border-radius: 15px;
-            padding: 25px;
-            margin: 25px 0;
-        }
-        
-        .session-name {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #667eea;
-            margin-bottom: 15px;
-        }
-        
-        .session-details {
-            display: flex;
-            justify-content: space-around;
-            margin: 20px 0;
-        }
-        
-        .detail-item {
-            text-align: center;
-        }
-        
-        .detail-value {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #333;
-        }
-        
-        .detail-label {
-            font-size: 0.9rem;
-            color: #666;
-            margin-top: 5px;
-        }
-        
-        .status {
-            display: inline-block;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-weight: bold;
-            margin: 10px 0;
-        }
-        
-        .status.active {
-            background: #d4edda;
-            color: #155724;
-        }
-        
-        .status.inactive {
-            background: #f8d7da;
-            color: #721c24;
-        }
-        
-        .players-list {
-            margin: 20px 0;
-            text-align: left;
-        }
-        
-        .player-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px;
-            margin: 5px 0;
-            background: white;
-            border-radius: 10px;
-            border: 1px solid #eee;
-        }
-        
-        .buttons {
-            margin-top: 30px;
-        }
-        
-        .btn {
-            display: inline-block;
-            padding: 15px 30px;
-            margin: 10px;
-            border: none;
-            border-radius: 25px;
-            font-size: 1rem;
-            font-weight: bold;
-            text-decoration: none;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-        
-        .btn-secondary {
-            background: #6c757d;
-            color: white;
-        }
-        
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-        }
-        
-        .app-store-links {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #eee;
-        }
-        
-        .app-store-links p {
-            color: #666;
-            margin-bottom: 15px;
-        }
-        
-        @media (max-width: 600px) {
-            .container {
-                padding: 30px 20px;
-            }
-            
-            .session-details {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .btn {
-                display: block;
-                margin: 10px 0;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="sushi-icon">🍣</div>
-        <h1>Sushi Streak</h1>
-        <p>Sei stato invitato a una sessione di gioco!</p>
-        
-        <div class="session-info">
-            <div class="session-name">${sessionInfo.sessionName}</div>
-            <div class="status ${sessionInfo.isActive ? 'active' : 'inactive'}">
-                ${sessionInfo.isActive ? '🟢 Sessione Attiva' : '🔴 Sessione Terminata'}
-            </div>
-            
-            <div class="session-details">
-                <div class="detail-item">
-                    <div class="detail-value">${sessionInfo.playersCount}</div>
-                    <div class="detail-label">Giocatori</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-value">${sessionId}</div>
-                    <div class="detail-label">Codice Sessione</div>
-                </div>
-            </div>
-            
-            ${sessionInfo.players.length > 0 ? `
-            <div class="players-list">
-                <h3>Giocatori:</h3>
-                ${sessionInfo.players.map(player => `
-                    <div class="player-item">
-                        <span>${player.name}</span>
-                        <span>${player.score} 🍣 ${player.finished ? '✅' : ''}</span>
-                    </div>
-                `).join('')}
-            </div>
-            ` : ''}
-        </div>
-        
-        <div class="buttons">
-            ${sessionInfo.isActive ? `
-                <a href="sushi-streak://join/${sessionId}" class="btn btn-primary">
-                    📱 Apri nell'App
-                </a>
-            ` : ''}
-            <button onclick="copySessionCode()" class="btn btn-secondary">
-                📋 Copia Codice
-            </button>
-        </div>
-        
-        <div class="app-store-links">
-            <p>Non hai ancora l'app? Scaricala qui:</p>
-            <a href="#" class="btn btn-primary">📱 App Store</a>
-            <a href="#" class="btn btn-primary">🤖 Google Play</a>
-        </div>
-    </div>
-    
-    <script>
-        function copySessionCode() {
-            navigator.clipboard.writeText('${sessionId}').then(() => {
-                alert('✅ Codice sessione copiato negli appunti!');
-            }).catch(() => {
-                // Fallback per browser più vecchi
-                const textArea = document.createElement('textarea');
-                textArea.value = '${sessionId}';
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
-                alert('✅ Codice sessione copiato negli appunti!');
-            });
-        }
-        
-        // Prova ad aprire l'app automaticamente su mobile
-        if (/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-            setTimeout(() => {
-                window.location.href = 'sushi-streak://join/${sessionId}';
-            }, 1000);
-        }
-    </script>
-</body>
-</html>`;
-      
-      res.send(html);
+      }
+      return session;
+    })();
+
+    pendingLoads.set(sessionId, load);
+    try {
+      return await load;
+    } finally {
+      pendingLoads.delete(sessionId);
+    }
+  }
+
+  function touch(session) {
+    session.lastActivity = Date.now();
+    db.run('UPDATE sessions SET last_activity = ? WHERE id = ?', [session.lastActivity, session.id]).catch(
+      logDbError('last_activity')
+    );
+  }
+
+  function newPlayer(name) {
+    const token = crypto.randomBytes(24).toString('base64url');
+    return {
+      token,
+      player: { id: crypto.randomUUID(), name, score: 0, finished: false, tokenHash: hashToken(token) },
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // HTTP
+  // ---------------------------------------------------------------------------
+  const app = express();
+  app.set('trust proxy', config.trustProxy);
+  app.disable('x-powered-by');
+
+  // Nonce per gli script/stili inline della pagina di invito, usato dalla Content Security Policy
+  app.use((req, res, next) => {
+    res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+    next();
+  });
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
+          styleSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
+          imgSrc: ["'self'", 'data:'],
+          connectSrc: ["'self'"],
+          frameAncestors: ["'none'"],
+          formAction: ["'none'"],
+        },
+      },
+      crossOriginEmbedderPolicy: false,
     })
-    .catch(error => {
-      res.status(404).send(`
-<!DOCTYPE html>
-<html lang="it">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🍣 Sushi Streak - Sessione Non Trovata</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-            margin: 0;
-        }
-        
-        .container {
-            background: white;
-            border-radius: 20px;
-            padding: 40px;
-            max-width: 400px;
-            width: 100%;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        
-        .error-icon {
-            font-size: 4rem;
-            margin-bottom: 20px;
-        }
-        
-        h1 {
-            color: #333;
-            margin-bottom: 20px;
-        }
-        
-        p {
-            color: #666;
-            margin-bottom: 30px;
-        }
-        
-        .btn {
-            display: inline-block;
-            padding: 15px 30px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            text-decoration: none;
-            border-radius: 25px;
-            font-weight: bold;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="error-icon">❌</div>
-        <h1>Sessione Non Trovata</h1>
-        <p>La sessione richiesta non esiste o è scaduta.</p>
-        <a href="#" class="btn">📱 Scarica l'App</a>
-    </div>
-</body>
-</html>`);
+  );
+  app.use(cors({ origin: config.corsOrigins, methods: ['GET', 'POST'] }));
+
+  // Log di accesso strutturato (livello debug per le richieste riuscite)
+  app.use((req, res, next) => {
+    const start = process.hrtime.bigint();
+    res.on('finish', () => {
+      const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+      const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'info' : 'debug';
+      logger[level]('http_request', {
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        durationMs: Math.round(durationMs),
+      });
     });
-});
+    next();
+  });
+  app.use(express.json({ limit: '10kb' }));
+
+  const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+  const writeLimiter = createRateLimiter({ max: 30, windowMs: 60 * 1000 });
+
+  app.get('/', (req, res) => {
+    res.json({ status: 'OK', message: 'Sushi Streak Server is running!', timestamp: new Date().toISOString() });
+  });
+
+  app.get(
+    '/api/health',
+    asyncRoute(async (req, res) => {
+      let database = 'ok';
+      try {
+        await db.get('SELECT 1');
+      } catch (err) {
+        database = 'error';
+        logger.error('Health check database fallito', { err });
+      }
+      res.status(database === 'ok' ? 200 : 503).json({
+        status: database === 'ok' ? 'healthy' : 'degraded',
+        service: 'sushi-streak-backend',
+        version: SERVICE_VERSION,
+        database,
+        activeSessions: sessions.size,
+        timestamp: new Date().toISOString(),
+      });
+    })
+  );
+
+  app.post(
+    '/api/sessions',
+    writeLimiter,
+    asyncRoute(async (req, res) => {
+      const body = req.body || {};
+      const sessionName = typeof body.sessionName === 'string' ? body.sessionName.trim() : '';
+      const sessionId = normalizeSessionId(sessionName);
+      const playerName = normalizePlayerName(body.playerName);
+      validateSessionId(sessionId);
+      validatePlayerName(playerName);
+
+      const existing = await loadSession(sessionId);
+      if (existing && isOpen(existing)) {
+        throw new ApiError(409, 'Esiste già una sessione attiva con questo nome. Scegline un altro.', 'session_exists');
+      }
+      if (existing) {
+        // Il codice di una sessione chiusa può essere riutilizzato
+        await db.run('DELETE FROM players WHERE session_id = ?', [sessionId]);
+        await db.run('DELETE FROM sessions WHERE id = ?', [sessionId]);
+      }
+
+      const now = Date.now();
+      try {
+        await db.run("INSERT INTO sessions (id, name, status, last_activity) VALUES (?, ?, 'active', ?)", [
+          sessionId,
+          sessionName,
+          now,
+        ]);
+      } catch (err) {
+        if (err.code === 'SQLITE_CONSTRAINT') {
+          throw new ApiError(
+            409,
+            'Esiste già una sessione attiva con questo nome. Scegline un altro.',
+            'session_exists'
+          );
+        }
+        throw err;
+      }
+
+      const { player, token } = newPlayer(playerName);
+      await db.run('INSERT INTO players (id, name, session_id, token, joined_at) VALUES (?, ?, ?, ?, ?)', [
+        player.id,
+        player.name,
+        sessionId,
+        player.tokenHash,
+        now,
+      ]);
+
+      const session = {
+        id: sessionId,
+        name: sessionName,
+        status: 'active',
+        lastActivity: now,
+        players: new Map([[player.id, player]]),
+      };
+      sessions.set(sessionId, session);
+
+      res.status(201).json({
+        sessionId,
+        sessionName,
+        playerId: player.id,
+        playerToken: token,
+        expiresAt: expiresAt(session),
+      });
+    })
+  );
+
+  app.post(
+    '/api/sessions/join',
+    writeLimiter,
+    asyncRoute(async (req, res) => {
+      const body = req.body || {};
+      const sessionId = normalizeSessionId(body.sessionId);
+      const playerName = normalizePlayerName(body.playerName);
+      if (!sessionId) throw new ApiError(400, 'Inserisci il codice della sessione', 'invalid_session_id');
+      validatePlayerName(playerName);
+
+      const session = await loadSession(sessionId);
+      if (!session) throw new ApiError(404, 'Sessione non trovata', 'not_found');
+      if (!isOpen(session)) throw new ApiError(410, 'La sessione è terminata o scaduta', 'session_closed');
+
+      const lower = playerName.toLowerCase();
+      if ([...session.players.values()].some((p) => p.name.toLowerCase() === lower)) {
+        throw new ApiError(409, 'Nome già in uso in questa sessione', 'name_taken');
+      }
+      if (session.players.size >= config.maxPlayersPerSession) {
+        throw new ApiError(403, 'La sessione ha raggiunto il numero massimo di giocatori', 'session_full');
+      }
+
+      // Il giocatore viene riservato in memoria prima dell'insert per evitare nomi duplicati concorrenti
+      const { player, token } = newPlayer(playerName);
+      session.players.set(player.id, player);
+      try {
+        await db.run('INSERT INTO players (id, name, session_id, token, joined_at) VALUES (?, ?, ?, ?, ?)', [
+          player.id,
+          player.name,
+          sessionId,
+          player.tokenHash,
+          Date.now(),
+        ]);
+      } catch (err) {
+        session.players.delete(player.id);
+        throw err;
+      }
+
+      touch(session);
+      io.to(sessionId).emit('session_update', publicSession(session));
+
+      res.json({
+        sessionId,
+        sessionName: session.name,
+        playerId: player.id,
+        playerToken: token,
+        expiresAt: expiresAt(session),
+      });
+    })
+  );
+
+  app.get(
+    '/api/sessions/:sessionId/info',
+    asyncRoute(async (req, res) => {
+      const sessionId = normalizeSessionId(req.params.sessionId);
+      const session = SESSION_ID_RE.test(sessionId) ? await loadSession(sessionId) : null;
+      if (!session) throw new ApiError(404, 'Sessione non trovata', 'not_found');
+      res.json(shareInfo(session));
+    })
+  );
+
+  app.get(
+    '/join/:sessionId',
+    asyncRoute(async (req, res) => {
+      const sessionId = normalizeSessionId(req.params.sessionId);
+      const session = SESSION_ID_RE.test(sessionId) ? await loadSession(sessionId) : null;
+      const nonce = res.locals.cspNonce;
+      if (!session) return res.status(404).type('html').send(renderNotFoundPage(nonce));
+      return res.type('html').send(renderJoinPage(shareInfo(session), nonce));
+    })
+  );
+
+  // Verifica degli Android App Links (attiva solo se è configurata l'impronta del certificato)
+  app.get('/privacy', (req, res) => {
+    res.type('html').send(
+      renderPrivacyPage({
+        contact: config.privacyContact,
+        retentionDays: Math.round(config.retentionMs / (24 * 60 * 60 * 1000)),
+        inactivityMinutes: Math.round(config.inactivityMs / 60000),
+        nonce: res.locals.cspNonce,
+      })
+    );
+  });
+
+  app.get('/.well-known/assetlinks.json', (req, res) => {
+    if (!config.androidCertFingerprints.length) return res.status(404).json([]);
+    return res.json([
+      {
+        relation: ['delegate_permission/common.handle_all_urls'],
+        target: {
+          namespace: 'android_app',
+          package_name: config.androidPackage,
+          sha256_cert_fingerprints: config.androidCertFingerprints,
+        },
+      },
+    ]);
+  });
+
+  app.use((req, res) => res.status(404).json({ error: 'Risorsa non trovata', code: 'not_found' }));
+
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, next) => {
+    if (err instanceof ApiError) {
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
+    if (err.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'Richiesta non valida', code: 'bad_request' });
+    }
+    logger.error('Errore non gestito', { err, method: req.method, path: req.path });
+    return res.status(500).json({ error: 'Errore interno del server', code: 'internal' });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Socket.IO
+  // ---------------------------------------------------------------------------
+  const server = http.createServer(app);
+  const io = new Server(server, { cors: { origin: config.corsOrigins, methods: ['GET', 'POST'] } });
+
+  // Avvolge un gestore di evento: valida l'ack, intercetta ogni errore e garantisce una sola risposta
+  function handler(fn) {
+    return (...args) => {
+      const last = args[args.length - 1];
+      const rawAck = typeof last === 'function' ? args.pop() : null;
+      let answered = false;
+      const ack = (response) => {
+        if (answered || !rawAck) return;
+        answered = true;
+        rawAck(response);
+      };
+      const payload = args[0] && typeof args[0] === 'object' ? args[0] : {};
+      Promise.resolve()
+        .then(() => fn(payload, ack))
+        .catch((err) => {
+          logger.error('Errore gestore socket', { err });
+          ack({ ok: false, code: 'internal', error: 'Errore interno del server' });
+        });
+    };
+  }
+
+  io.on('connection', (socket) => {
+    socket.data.pieceHits = [];
+
+    const currentContext = () => {
+      const { sessionId, playerId } = socket.data;
+      if (!sessionId || !playerId)
+        return { error: { ok: false, code: 'not_joined', error: 'Non sei in una sessione' } };
+      const session = sessions.get(sessionId);
+      if (!session || !isOpen(session)) {
+        return { error: { ok: false, code: 'session_closed', error: 'La sessione è terminata o scaduta' } };
+      }
+      const player = session.players.get(playerId);
+      if (!player) return { error: { ok: false, code: 'unauthorized', error: 'Giocatore non valido' } };
+      return { session, player };
+    };
+
+    const withinRateLimit = () => {
+      const now = Date.now();
+      socket.data.pieceHits = socket.data.pieceHits.filter((t) => now - t < PIECE_RATE_LIMIT.windowMs);
+      if (socket.data.pieceHits.length >= PIECE_RATE_LIMIT.max) return false;
+      socket.data.pieceHits.push(now);
+      return true;
+    };
+
+    const broadcast = (session) => io.to(session.id).emit('session_update', publicSession(session));
+
+    socket.on(
+      'join_session',
+      handler(async ({ sessionId: rawSessionId, playerId, token }, ack) => {
+        const sessionId = normalizeSessionId(rawSessionId);
+        if (!SESSION_ID_RE.test(sessionId) || typeof playerId !== 'string') {
+          return ack({ ok: false, code: 'bad_request', error: 'Dati non validi' });
+        }
+        const session = await loadSession(sessionId);
+        if (!session) return ack({ ok: false, code: 'not_found', error: 'Sessione non trovata' });
+
+        const player = session.players.get(playerId);
+        if (!player || !tokenMatches(token, player.tokenHash)) {
+          return ack({ ok: false, code: 'unauthorized', error: 'Credenziali di gioco non valide' });
+        }
+
+        if (socket.data.sessionId && socket.data.sessionId !== sessionId) {
+          socket.leave(socket.data.sessionId);
+        }
+        socket.data.sessionId = sessionId;
+        socket.data.playerId = playerId;
+        socket.join(sessionId);
+
+        if (isOpen(session)) touch(session);
+        return ack({ ok: true, session: publicSession(session) });
+      })
+    );
+
+    socket.on(
+      'leave_session',
+      handler(async (payload, ack) => {
+        if (socket.data.sessionId) socket.leave(socket.data.sessionId);
+        socket.data.sessionId = null;
+        socket.data.playerId = null;
+        ack({ ok: true });
+      })
+    );
+
+    const changeScore = (delta) =>
+      handler(async (payload, ack) => {
+        const { session, player, error } = currentContext();
+        if (error) return ack(error);
+        if (!withinRateLimit()) return ack({ ok: false, code: 'rate_limited', error: 'Stai andando troppo veloce!' });
+        if (player.finished) return ack({ ok: false, code: 'finished', error: 'Hai già finito' });
+
+        const next = Math.min(MAX_SCORE, Math.max(0, player.score + delta));
+        if (next !== player.score) {
+          player.score = next;
+          await db.run('UPDATE players SET score = ? WHERE id = ?', [player.score, player.id]);
+          touch(session);
+          broadcast(session);
+        }
+        return ack({ ok: true, score: player.score });
+      });
+
+    socket.on('add_piece', changeScore(1));
+    socket.on('remove_piece', changeScore(-1));
+
+    socket.on(
+      'player_finished',
+      handler(async (payload, ack) => {
+        const { session, player, error } = currentContext();
+        if (error) return ack(error);
+
+        if (!player.finished) {
+          player.finished = true;
+          await db.run('UPDATE players SET finished = 1 WHERE id = ?', [player.id]);
+          touch(session);
+        }
+
+        const allFinished = [...session.players.values()].every((p) => p.finished);
+        if (allFinished) await closeSession(session, 'ended');
+        broadcast(session);
+        if (allFinished) io.to(session.id).emit('game_ended', publicSession(session));
+        return ack({ ok: true });
+      })
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // Manutenzione periodica: chiusura sessioni inattive e pulizia di quelle vecchie
+  // ---------------------------------------------------------------------------
+  async function sweep() {
+    const now = Date.now();
+    for (const session of [...sessions.values()]) {
+      if (isExpired(session)) {
+        await closeSession(session, 'expired');
+        io.to(session.id).emit('session_expired', { sessionId: session.id });
+        io.in(session.id).socketsLeave(session.id);
+      }
+    }
+    await db.run("UPDATE sessions SET status = 'expired', ended_at = ? WHERE status = 'active' AND last_activity < ?", [
+      now,
+      now - config.inactivityMs,
+    ]);
+    const purgeBefore = now - config.retentionMs;
+    await db.run(
+      "DELETE FROM players WHERE session_id IN (SELECT id FROM sessions WHERE status != 'active' AND ended_at < ?)",
+      [purgeBefore]
+    );
+    await db.run("DELETE FROM sessions WHERE status != 'active' AND ended_at < ?", [purgeBefore]);
+  }
+
+  let sweepTimer = null;
+
+  async function start(port = config.port) {
+    await migrate(db);
+    sweepTimer = setInterval(() => sweep().catch(logDbError('sweep')), config.sweepIntervalMs);
+    await new Promise((resolve) => server.listen(port, '0.0.0.0', resolve));
+    return server.address().port;
+  }
+
+  async function close() {
+    if (sweepTimer) clearInterval(sweepTimer);
+    await new Promise((resolve) => io.close(() => resolve()));
+    await db.close();
+  }
+
+  return { app, server, io, start, close, sweep, sessions };
+}
+
+module.exports = { createServer, normalizePlayerName, normalizeSessionId };
+
+if (require.main === module) {
+  const instance = createServer();
+  instance
+    .start()
+    .then((port) => logger.info('Server in ascolto', { port, version: SERVICE_VERSION }))
+    .catch((err) => {
+      logger.error('Avvio del server fallito', { err });
+      process.exit(1);
+    });
+
+  const shutdown = (signal) => {
+    logger.info('Chiusura in corso', { signal });
+    instance
+      .close()
+      .catch((err) => logger.error('Errore in chiusura', { err }))
+      .finally(() => process.exit(0));
+    setTimeout(() => process.exit(1), 5000).unref();
+  };
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('unhandledRejection', (err) => logger.error('Promise rifiutata non gestita', { err }));
+}
